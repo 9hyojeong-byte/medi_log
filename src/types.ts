@@ -1,0 +1,11 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+export interface MedicationRecord {
+  id: string;
+  isMedicated: boolean;
+  memo: string;
+  timestamp: string; // ISO string
+}

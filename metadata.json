@@ -1,0 +1,6 @@
+{
+  "name": "MediTracker",
+  "description": "Simple medication and health memo tracker with local storage and export functionality.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
