@@ -22,6 +22,20 @@ import {
 import { MedicationRecord } from './types.ts';
 
 export default function App() {
+  // Helper: Get current time in Seoul (KST) for datetime-local input (YYYY-MM-DDTHH:mm)
+  const getSeoulNow = (dateInput?: string) => {
+    const d = dateInput ? new Date(dateInput) : new Date();
+    return new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).format(d).replace(' ', 'T');
+  };
+
   const [records, setRecords] = useState<MedicationRecord[]>(() => {
     const saved = localStorage.getItem('medication_records');
     return saved ? JSON.parse(saved) : [];
@@ -31,7 +45,7 @@ export default function App() {
   // Form State
   const [isMedicated, setIsMedicated] = useState(false);
   const [hasSymptoms, setHasSymptoms] = useState(false);
-  const [customTimestamp, setCustomTimestamp] = useState(new Date().toISOString().slice(0, 16)); // YYYY-MM-DDTHH:mm
+  const [customTimestamp, setCustomTimestamp] = useState(getSeoulNow()); 
   const [memo, setMemo] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -41,7 +55,8 @@ export default function App() {
   }, [records]);
 
   const handleSave = () => {
-    const finalTimestamp = new Date(customTimestamp).toISOString();
+    // Treat the input string as Seoul time (+09:00)
+    const finalTimestamp = new Date(customTimestamp + ':00+09:00').toISOString();
     
     if (editingId) {
       setRecords(prev => prev.map(rec => 
@@ -65,7 +80,7 @@ export default function App() {
     setMemo('');
     setIsMedicated(false);
     setHasSymptoms(false);
-    setCustomTimestamp(new Date().toISOString().slice(0, 16));
+    setCustomTimestamp(getSeoulNow());
     setActiveTab('history');
   };
 
@@ -74,7 +89,7 @@ export default function App() {
     setIsMedicated(record.isMedicated);
     setHasSymptoms(record.hasSymptoms || false);
     setMemo(record.memo);
-    setCustomTimestamp(new Date(record.timestamp).toISOString().slice(0, 16));
+    setCustomTimestamp(getSeoulNow(record.timestamp));
     setActiveTab('record');
   };
 
@@ -99,8 +114,17 @@ export default function App() {
   const formatDate = (isoStr: string) => {
     const date = new Date(isoStr);
     return {
-      date: date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }),
-      time: date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+      date: date.toLocaleDateString('ko-KR', { 
+        timeZone: 'Asia/Seoul',
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      }),
+      time: date.toLocaleTimeString('ko-KR', { 
+        timeZone: 'Asia/Seoul',
+        hour: '2-digit', 
+        minute: '2-digit' 
+      })
     };
   };
 
@@ -149,7 +173,7 @@ export default function App() {
                 setMemo('');
                 setIsMedicated(false);
                 setHasSymptoms(false);
-                setCustomTimestamp(new Date().toISOString().slice(0, 16));
+                setCustomTimestamp(getSeoulNow());
               }
             }}
             className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-all ${
@@ -199,7 +223,7 @@ export default function App() {
                       setMemo('');
                       setIsMedicated(false);
                       setHasSymptoms(false);
-                      setCustomTimestamp(new Date().toISOString().slice(0, 16));
+                      setCustomTimestamp(getSeoulNow());
                       setActiveTab('history');
                     }}
                     className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
