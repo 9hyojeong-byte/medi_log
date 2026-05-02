@@ -30,6 +30,8 @@ export default function App() {
   
   // Form State
   const [isMedicated, setIsMedicated] = useState(false);
+  const [hasSymptoms, setHasSymptoms] = useState(false);
+  const [customTimestamp, setCustomTimestamp] = useState(new Date().toISOString().slice(0, 16)); // YYYY-MM-DDTHH:mm
   const [memo, setMemo] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -39,10 +41,12 @@ export default function App() {
   }, [records]);
 
   const handleSave = () => {
+    const finalTimestamp = new Date(customTimestamp).toISOString();
+    
     if (editingId) {
       setRecords(prev => prev.map(rec => 
         rec.id === editingId 
-          ? { ...rec, isMedicated, memo, timestamp: rec.timestamp } // Keep original time for edit, or update? User might want edited time. Let's keep original for now but add an edited flag if needed.
+          ? { ...rec, isMedicated, hasSymptoms, memo, timestamp: finalTimestamp } 
           : rec
       ));
       setEditingId(null);
@@ -50,8 +54,9 @@ export default function App() {
       const newRecord: MedicationRecord = {
         id: crypto.randomUUID(),
         isMedicated,
+        hasSymptoms,
         memo: memo.trim(),
-        timestamp: new Date().toISOString(),
+        timestamp: finalTimestamp,
       };
       setRecords(prev => [newRecord, ...prev]);
     }
@@ -59,13 +64,17 @@ export default function App() {
     // Reset form
     setMemo('');
     setIsMedicated(false);
+    setHasSymptoms(false);
+    setCustomTimestamp(new Date().toISOString().slice(0, 16));
     setActiveTab('history');
   };
 
   const handleEdit = (record: MedicationRecord) => {
     setEditingId(record.id);
     setIsMedicated(record.isMedicated);
+    setHasSymptoms(record.hasSymptoms || false);
     setMemo(record.memo);
+    setCustomTimestamp(new Date(record.timestamp).toISOString().slice(0, 16));
     setActiveTab('record');
   };
 
@@ -87,10 +96,6 @@ export default function App() {
     linkElement.click();
   };
 
-  const sortedRecords = useMemo(() => {
-    return [...records].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [records]);
-
   const formatDate = (isoStr: string) => {
     const date = new Date(isoStr);
     return {
@@ -99,9 +104,26 @@ export default function App() {
     };
   };
 
+  const groupedRecords = useMemo(() => {
+    const groups: Record<string, MedicationRecord[]> = {};
+    const sorted = [...records].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    sorted.forEach(record => {
+      const { date } = formatDate(record.timestamp);
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(record);
+    });
+    
+    return Object.entries(groups).sort((a, b) => {
+      return new Date(b[1][0].timestamp).getTime() - new Date(a[1][0].timestamp).getTime();
+    });
+  }, [records]);
+
   return (
     <div id="app-container" className="min-h-screen bg-slate-50 flex flex-col items-center p-4 sm:p-8">
-      <header className="w-full max-w-md flex flex-col gap-6 mb-8">
+      <header className="w-full max-w-2xl flex flex-col gap-6 mb-8">
         <div className="flex items-center justify-between">
           <h1 id="app-title" className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <PlusCircle className="text-emerald-500 w-8 h-8" />
@@ -126,6 +148,8 @@ export default function App() {
               if (!editingId) {
                 setMemo('');
                 setIsMedicated(false);
+                setHasSymptoms(false);
+                setCustomTimestamp(new Date().toISOString().slice(0, 16));
               }
             }}
             className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-all ${
@@ -152,7 +176,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="w-full max-w-md relative">
+      <main className="w-full max-w-2xl relative">
         <AnimatePresence mode="wait">
           {activeTab === 'record' ? (
             <motion.div
@@ -161,11 +185,11 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.2 }}
-              className="bg-white rounded-3xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col gap-6"
+              className="bg-white rounded-3xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col gap-6 mx-auto max-w-md"
             >
               <div className="flex items-center justify-between border-b border-slate-50 pb-4">
                 <h2 id="record-title" className="text-xl font-semibold text-slate-800">
-                  {editingId ? '기록 수정하기' : '오늘의 상태 기록'}
+                  {editingId ? '기록 수정하기' : '상태 기록하기'}
                 </h2>
                 {editingId && (
                   <button 
@@ -174,6 +198,8 @@ export default function App() {
                       setEditingId(null);
                       setMemo('');
                       setIsMedicated(false);
+                      setHasSymptoms(false);
+                      setCustomTimestamp(new Date().toISOString().slice(0, 16));
                       setActiveTab('history');
                     }}
                     className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
@@ -183,33 +209,81 @@ export default function App() {
                 )}
               </div>
 
+              {/* Timestamp Field */}
+              <div id="timestamp-field" className="flex flex-col gap-3">
+                <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <Calendar size={14} className="text-emerald-500" /> 기록 일시
+                </label>
+                <input
+                  type="datetime-local"
+                  value={customTimestamp}
+                  onChange={(e) => setCustomTimestamp(e.target.value)}
+                  className="w-full p-4 rounded-xl border-2 border-slate-100 focus:border-emerald-500 focus:ring-0 outline-none transition-all text-slate-700 font-medium"
+                />
+              </div>
+
               {/* Medication Toggle */}
               <div id="medication-toggle" className="flex flex-col gap-3">
-                <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider">오늘 약을 드셨나요?</label>
-                <div className="flex gap-4">
+                <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <PlusCircle size={14} className="text-emerald-500" /> 투약 여부
+                </label>
+                <div className="flex gap-3">
                   <button
                     id="btn-medicated-yes"
                     onClick={() => setIsMedicated(true)}
-                    className={`flex-1 py-4 px-4 rounded-2xl flex flex-col items-center gap-2 border-2 transition-all ${
+                    className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
                       isMedicated 
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
-                        : 'border-slate-100 hover:border-slate-200 text-slate-400'
+                        : 'border-slate-50 bg-slate-50/50 text-slate-400'
                     }`}
                   >
-                    <CheckCircle2 size={32} />
-                    <span className="font-bold">네, 먹었어요</span>
+                    <CheckCircle2 size={18} />
+                    먹었어요
                   </button>
                   <button
                     id="btn-medicated-no"
                     onClick={() => setIsMedicated(false)}
-                    className={`flex-1 py-4 px-4 rounded-2xl flex flex-col items-center gap-2 border-2 transition-all ${
+                    className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
                       !isMedicated 
-                        ? 'border-slate-300 bg-slate-50 text-slate-600' 
-                        : 'border-slate-100 hover:border-slate-200 text-slate-400'
+                        ? 'border-slate-300 bg-slate-100 text-slate-600' 
+                        : 'border-slate-50 bg-slate-50/50 text-slate-400'
                     }`}
                   >
-                    <XCircle size={32} />
-                    <span className="font-bold">아니오/아직요</span>
+                    <XCircle size={18} />
+                    안 먹었어요
+                  </button>
+                </div>
+              </div>
+
+              {/* Symptoms Toggle */}
+              <div id="symptoms-toggle" className="flex flex-col gap-3">
+                <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <History size={14} className="text-emerald-500" /> 증상 유무
+                </label>
+                <div className="flex gap-3">
+                  <button
+                    id="btn-symptoms-yes"
+                    onClick={() => setHasSymptoms(true)}
+                    className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
+                      hasSymptoms 
+                        ? 'border-amber-500 bg-amber-50 text-amber-700' 
+                        : 'border-slate-50 bg-slate-50/50 text-slate-400'
+                    }`}
+                  >
+                    <CheckCircle2 size={18} />
+                    증상 있음
+                  </button>
+                  <button
+                    id="btn-symptoms-no"
+                    onClick={() => setHasSymptoms(false)}
+                    className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
+                      !hasSymptoms 
+                        ? 'border-slate-300 bg-slate-100 text-slate-600' 
+                        : 'border-slate-50 bg-slate-50/50 text-slate-400'
+                    }`}
+                  >
+                    <XCircle size={18} />
+                    증상 없음
                   </button>
                 </div>
               </div>
@@ -225,7 +299,7 @@ export default function App() {
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
                   placeholder="증상이나 기분이 어떠신가요?"
-                  className="w-full min-h-[140px] p-4 rounded-2xl border-2 border-slate-100 focus:border-emerald-500 focus:ring-0 outline-none transition-all resize-none text-slate-700 leading-relaxed"
+                  className="w-full min-h-[100px] p-4 rounded-xl border-2 border-slate-100 focus:border-emerald-500 focus:ring-0 outline-none transition-all resize-none text-slate-700 leading-relaxed text-sm"
                 />
               </div>
 
@@ -233,11 +307,10 @@ export default function App() {
               <button
                 id="save-btn"
                 onClick={handleSave}
-                disabled={!editingId && !memo.trim() && !isMedicated}
-                className="w-full py-4 rounded-2xl bg-slate-800 text-white font-bold text-lg flex items-center justify-center gap-2 hover:bg-slate-900 transition-all active:scale-95 disabled:bg-slate-200 disabled:cursor-not-allowed shadow-lg shadow-slate-200"
+                className="w-full py-4 rounded-2xl bg-slate-800 text-white font-bold text-lg flex items-center justify-center gap-2 hover:bg-slate-900 transition-all active:scale-95 shadow-lg shadow-slate-200"
               >
                 <Save size={20} />
-                {editingId ? '기록 업데이트' : '저장하기'}
+                {editingId ? '기록 업데이트' : '기록 저장하기'}
               </button>
             </motion.div>
           ) : (
@@ -247,15 +320,14 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
+              className="flex flex-col gap-10"
             >
-              {sortedRecords.length === 0 ? (
-                <div id="no-records" className="bg-white rounded-3xl p-12 text-center flex flex-col items-center gap-4 border border-slate-100 shadow-sm">
+              {groupedRecords.length === 0 ? (
+                <div id="no-records" className="bg-white rounded-3xl p-12 text-center flex flex-col items-center gap-4 border border-slate-100 shadow-sm mx-auto w-full max-w-md">
                   <div className="bg-slate-50 p-4 rounded-full">
                     <Calendar className="text-slate-300 w-12 h-12" />
                   </div>
                   <h3 className="text-lg font-semibold text-slate-800">아직 저장된 기록이 없어요</h3>
-                  <p className="text-slate-500 text-sm leading-relaxed">매일의 건강 기록을 시작해보세요!</p>
                   <button 
                     onClick={() => setActiveTab('record')}
                     className="mt-4 text-emerald-600 font-bold hover:underline"
@@ -264,63 +336,81 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                sortedRecords.map((record) => {
-                  const { date, time } = formatDate(record.timestamp);
-                  return (
-                    <motion.div
-                      id={`record-${record.id}`}
-                      key={record.id}
-                      layout
-                      className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 flex flex-col gap-4 hover:shadow-md transition-shadow group"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex gap-3">
-                          <div className={`mt-0.5 p-1.5 rounded-full ${record.isMedicated ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                            {record.isMedicated ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
-                          </div>
-                          <div>
-                            <div id={`record-date-${record.id}`} className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                              <Calendar size={12} /> {date}
-                            </div>
-                            <div id={`record-time-${record.id}`} className="text-[10px] font-medium text-slate-300 flex items-center gap-1 mt-0.5">
-                              <Clock size={10} /> {time}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            id={`edit-btn-${record.id}`}
-                            onClick={() => handleEdit(record)}
-                            className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-full transition-all"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button 
-                            id={`delete-btn-${record.id}`}
-                            onClick={() => handleDelete(record.id)}
-                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                groupedRecords.map(([date, dateRecords]) => (
+                  <div key={date} className="flex flex-col gap-3">
+                    <h3 className="text-sm font-bold text-slate-400 flex items-center gap-2 px-1 uppercase tracking-widest">
+                      <Calendar size={14} className="text-emerald-500" />
+                      {date}
+                    </h3>
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50/50 border-b border-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-tight">
+                              <th className="px-4 py-3 min-w-[80px]">시간</th>
+                              <th className="px-4 py-3 text-center">투약</th>
+                              <th className="px-4 py-3 text-center">증상</th>
+                              <th className="px-4 py-3">메모</th>
+                              <th className="px-4 py-3 text-right">관리</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dateRecords.map((record) => {
+                              const { time } = formatDate(record.timestamp);
+                              return (
+                                <tr key={record.id} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group">
+                                  <td className="px-4 py-4 font-medium text-slate-600 whitespace-nowrap">
+                                    <div className="flex items-center gap-1.5">
+                                      <Clock size={12} className="text-slate-300" />
+                                      {time}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-4 text-center">
+                                    <div className="flex justify-center">
+                                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                        record.isMedicated ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
+                                      }`}>
+                                        {record.isMedicated ? 'O' : 'X'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-4 text-center">
+                                    <div className="flex justify-center">
+                                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                        (record.hasSymptoms ?? false) ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'
+                                      }`}>
+                                        {(record.hasSymptoms ?? false) ? 'O' : 'X'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-4 text-slate-500 italic max-w-[200px] truncate group-hover:whitespace-normal group-hover:text-clip transition-all">
+                                    {record.memo || <span className="text-slate-200">-</span>}
+                                  </td>
+                                  <td className="px-4 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-0.5">
+                                      <button 
+                                        onClick={() => handleEdit(record)}
+                                        className="p-1.5 text-slate-300 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all"
+                                      >
+                                        <Edit2 size={14} />
+                                      </button>
+                                      <button 
+                                        onClick={() => handleDelete(record.id)}
+                                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                      
-                      {record.memo && (
-                        <p id={`record-memo-${record.id}`} className="text-slate-700 text-sm bg-slate-50/50 p-4 rounded-2xl border border-slate-50/80 leading-relaxed italic">
-                          "{record.memo}"
-                        </p>
-                      )}
-                      
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-tighter ${
-                          record.isMedicated ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {record.isMedicated ? '투약 완료' : '미투약/미기록'}
-                        </span>
-                      </div>
-                    </motion.div>
-                  );
-                })
+                    </div>
+                  </div>
+                ))
               )}
             </motion.div>
           )}

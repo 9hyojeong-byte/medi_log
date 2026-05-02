@@ -6,6 +6,7 @@
 export interface MedicationRecord {
   id: string;
   isMedicated: boolean;
+  hasSymptoms: boolean;
   memo: string;
   timestamp: string; // ISO string
 }
