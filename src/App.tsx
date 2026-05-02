@@ -407,7 +407,7 @@ export default function App() {
                                       </span>
                                     </div>
                                   </td>
-                                  <td className="px-4 py-4 text-slate-500 italic max-w-[200px] truncate group-hover:whitespace-normal group-hover:text-clip transition-all">
+                                  <td className="px-4 py-4 text-slate-500 italic min-w-[150px] whitespace-pre-wrap break-words leading-relaxed text-xs">
                                     {record.memo || <span className="text-slate-200">-</span>}
                                   </td>
                                   <td className="px-4 py-4 text-right">
