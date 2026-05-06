@@ -130,7 +130,7 @@ export default function App() {
 
   const groupedRecords = useMemo(() => {
     const groups: Record<string, MedicationRecord[]> = {};
-    const sorted = [...records].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const sorted = [...records].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     
     sorted.forEach(record => {
       const { date } = formatDate(record.timestamp);
@@ -141,7 +141,7 @@ export default function App() {
     });
     
     return Object.entries(groups).sort((a, b) => {
-      return new Date(b[1][0].timestamp).getTime() - new Date(a[1][0].timestamp).getTime();
+      return new Date(a[1][0].timestamp).getTime() - new Date(b[1][0].timestamp).getTime();
     });
   }, [records]);
 
