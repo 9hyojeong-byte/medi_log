@@ -101,6 +101,42 @@ export default function App() {
 
   const [showExportOptions, setShowExportOptions] = useState(false);
 
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (Array.isArray(json)) {
+          // Basic validation of structure
+          const validRecords = json.filter(rec => rec.id && rec.timestamp);
+          
+          if (validRecords.length === 0) {
+            alert('유효한 데이터가 없습니다.');
+            return;
+          }
+
+          if (confirm(`${validRecords.length}개의 기록을 가져오시겠습니까? (중복된 ID는 제외됩니다)`)) {
+            setRecords(prev => {
+              const existingIds = new Set(prev.map(r => r.id));
+              const uniqueNewRecords = validRecords.filter(r => !existingIds.has(r.id));
+              return [...prev, ...uniqueNewRecords];
+            });
+            alert('데이터를 성공적으로 가져왔습니다.');
+          }
+        }
+      } catch (err) {
+        alert('파일을 읽는 중 오류가 발생했습니다. 올바른 JSON 파일인지 확인해주세요.');
+      }
+    };
+    reader.readAsText(file);
+    // Reset input
+    e.target.value = '';
+    setShowExportOptions(false);
+  };
+
   const handleDownload = (type: 'json' | 'text') => {
     let content = '';
     let mimeType = '';
@@ -205,25 +241,36 @@ export default function App() {
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 z-50 overflow-hidden py-2"
+                    className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 z-50 overflow-hidden py-2"
                   >
                     <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 mb-1">
-                      형식 선택
+                      데이터 관리
                     </div>
                     <button
                       onClick={() => handleDownload('json')}
                       className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-slate-50 flex items-center justify-between text-slate-700"
                     >
-                      JSON 데이터 (.json)
-                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-400">데이터용</span>
+                      데이터 내보내기 (JSON)
+                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-400">Export</span>
                     </button>
                     <button
                       onClick={() => handleDownload('text')}
                       className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-slate-50 flex items-center justify-between text-slate-700"
                     >
-                      텍스트 파일 (.txt)
-                      <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-600">읽기용</span>
+                      텍스트로 저장 (.txt)
+                      <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-600">Print</span>
                     </button>
+                    <div className="h-[1px] bg-slate-50 my-1" />
+                    <label className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-slate-50 flex items-center justify-between text-slate-700 cursor-pointer">
+                      <span>데이터 가져오기 (JSON)</span>
+                      <span className="text-[10px] bg-blue-100 px-1.5 py-0.5 rounded text-blue-600">Import</span>
+                      <input 
+                        type="file" 
+                        accept=".json" 
+                        className="hidden" 
+                        onChange={handleImport}
+                      />
+                    </label>
                   </motion.div>
                 </>
               )}

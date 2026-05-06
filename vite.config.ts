@@ -20,12 +20,12 @@ export default defineConfig(({mode}) => {
           theme_color: '#10b981',
           icons: [
             {
-              src: 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png',
-              sizes: '192x192',
+              src: 'https://cdn-icons-png.flaticon.com/128/16021/16021524.png',
+              sizes: '128x128',
               type: 'image/png'
             },
             {
-              src: 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png',
+              src: 'https://cdn-icons-png.flaticon.com/128/16021/16021524.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable'
