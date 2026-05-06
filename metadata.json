@@ -1,6 +1,6 @@
 {
-  "name": "MediTracker",
-  "description": "Simple medication and health memo tracker with local storage and export functionality.",
+  "name": "쿠쿠증상기록",
+  "description": "반려견 쿠쿠의 투약 및 증상 기록을 위한 간단한 트래커",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

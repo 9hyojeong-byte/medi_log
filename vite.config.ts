@@ -14,9 +14,9 @@ export default defineConfig(({mode}) => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
         manifest: {
-          name: 'MediTracker',
-          short_name: 'MediTrack',
-          description: 'Simple medication and health memo tracker',
+          name: '쿠쿠증상기록',
+          short_name: '쿠쿠기록',
+          description: '반려견 쿠쿠의 투약 및 증상 기록 트래커',
           theme_color: '#10b981',
           icons: [
             {

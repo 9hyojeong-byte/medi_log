@@ -214,7 +214,7 @@ export default function App() {
         <div className="flex items-center justify-between relative">
           <h1 id="app-title" className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <PlusCircle className="text-emerald-500 w-8 h-8" />
-            MediTracker
+            쿠쿠증상기록
           </h1>
           <div className="relative">
             <button 
