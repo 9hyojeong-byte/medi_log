@@ -99,31 +99,58 @@ export default function App() {
     }
   };
 
-  const handleDownload = () => {
-    const dataStr = JSON.stringify(records, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-    
-    const exportFileDefaultName = `medication_records_${new Date().toISOString().split('T')[0]}.json`;
+  const [showExportOptions, setShowExportOptions] = useState(false);
+
+  const handleDownload = (type: 'json' | 'text') => {
+    let content = '';
+    let mimeType = '';
+    let extension = '';
+
+    if (type === 'json') {
+      content = JSON.stringify(records, null, 2);
+      mimeType = 'application/json';
+      extension = 'json';
+    } else {
+      // Process Text Format
+      const textLines: string[] = [];
+      groupedRecords.forEach(([date, dateRecords]) => {
+        textLines.push(`${date}\n`);
+        dateRecords.forEach((rec) => {
+          const { time } = formatDate(rec.timestamp);
+          textLines.push(time);
+          textLines.push(`투약여부 : ${rec.isMedicated ? 'O' : 'X'}`);
+          textLines.push(`증상유무 : ${rec.hasSymptoms ? 'O' : 'X'}`);
+          textLines.push(`메모 : ${rec.memo || ''}`);
+          textLines.push(''); // Empty line between records
+        });
+        textLines.push(''); // Extra empty line between days
+      });
+      content = textLines.join('\n');
+      mimeType = 'text/plain';
+      extension = 'txt';
+    }
+
+    const dataUri = `data:${mimeType};charset=utf-8,` + encodeURIComponent(content);
+    const exportFileDefaultName = `medication_records_${new Date().toISOString().split('T')[0]}.${extension}`;
     
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
+    setShowExportOptions(false);
   };
 
   const formatDate = (isoStr: string) => {
     const date = new Date(isoStr);
     return {
-      date: date.toLocaleDateString('ko-KR', { 
+      date: date.toLocaleDateString('sv-SE', { // Using sv-SE for YYYY-MM-DD
         timeZone: 'Asia/Seoul',
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
       }),
       time: date.toLocaleTimeString('ko-KR', { 
         timeZone: 'Asia/Seoul',
         hour: '2-digit', 
-        minute: '2-digit' 
+        minute: '2-digit',
+        hour12: false
       })
     };
   };
@@ -148,19 +175,60 @@ export default function App() {
   return (
     <div id="app-container" className="min-h-screen bg-slate-50 flex flex-col items-center p-4 sm:p-8">
       <header className="w-full max-w-2xl flex flex-col gap-6 mb-8">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between relative">
           <h1 id="app-title" className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <PlusCircle className="text-emerald-500 w-8 h-8" />
             MediTracker
           </h1>
-          <button 
-            id="download-btn"
-            onClick={handleDownload}
-            className="p-2 hover:bg-white rounded-full transition-colors text-slate-500 hover:text-emerald-600 shadow-sm border border-slate-100"
-            title="데이터 다운로드"
-          >
-            <Download size={20} />
-          </button>
+          <div className="relative">
+            <button 
+              id="download-btn"
+              onClick={() => setShowExportOptions(!showExportOptions)}
+              className={`p-2 rounded-full transition-all shadow-sm border ${
+                showExportOptions 
+                  ? 'bg-emerald-500 text-white border-emerald-500' 
+                  : 'bg-white text-slate-500 hover:text-emerald-600 border-slate-100 hover:bg-slate-50'
+              }`}
+              title="데이터 다운로드"
+            >
+              <Download size={20} />
+            </button>
+            
+            <AnimatePresence>
+              {showExportOptions && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowExportOptions(false)} 
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 z-50 overflow-hidden py-2"
+                  >
+                    <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 mb-1">
+                      형식 선택
+                    </div>
+                    <button
+                      onClick={() => handleDownload('json')}
+                      className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-slate-50 flex items-center justify-between text-slate-700"
+                    >
+                      JSON 데이터 (.json)
+                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-400">데이터용</span>
+                    </button>
+                    <button
+                      onClick={() => handleDownload('text')}
+                      className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-slate-50 flex items-center justify-between text-slate-700"
+                    >
+                      텍스트 파일 (.txt)
+                      <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-600">읽기용</span>
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
         {/* Navigation Tabs */}
