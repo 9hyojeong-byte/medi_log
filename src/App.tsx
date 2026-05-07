@@ -36,7 +36,7 @@ export default function App() {
     }).format(d).replace(' ', 'T');
   };
 
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbyrxt-jz9mP3G5KsxaV84QGw9IqD0pNX-pM_0fnCt5wAVNrt7k78xllh86gXNgt__Vd/exec";
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbzD8rEVsbyyiOHV1F2rvE7Y3fx4NO8TdmJniev3iEYOR7NQmx3l97EA9cijE_2Cbm15/exec";
 
   const [records, setRecords] = useState<MedicationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
