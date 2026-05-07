@@ -17,6 +17,11 @@ import {
   XCircle,
   Clock,
   ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  CheckCircle,
+  AlertCircle,
+  Edit,
   X
 } from 'lucide-react';
 import { MedicationRecord } from './types.ts';
@@ -38,11 +43,24 @@ export default function App() {
 
   const GAS_URL = "https://script.google.com/macros/s/AKfycbw-Zv8qMQvDHGIHYfsv5hAo1yc5RMGYSxe-_INmAw1PHyHBwGmtHbzUrmOpTORARe2K/exec";
 
+  const getKSTDateStr = (isoString: string) => {
+    try {
+      const date = new Date(isoString);
+      // Get date in KST (UTC+9)
+      const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+      return kstDate.toISOString().split('T')[0];
+    } catch {
+      return isoString.split('T')[0];
+    }
+  };
+
   const [records, setRecords] = useState<MedicationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'record' | 'history'>('record');
+  const [activeTab, setActiveTab] = useState<'record' | 'history' | 'calendar'>('record');
   
-  // Form State
+  // Calendar State
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isMedicated, setIsMedicated] = useState(false);
   const [hasSymptoms, setHasSymptoms] = useState(false);
   const [customTimestamp, setCustomTimestamp] = useState(getSeoulNow()); 
@@ -398,7 +416,7 @@ export default function App() {
             }`}
           >
             <PlusCircle size={18} />
-            기록하기
+            기록
           </button>
           <button
             id="tab-history"
@@ -410,7 +428,19 @@ export default function App() {
             }`}
           >
             <History size={18} />
-            목록보기
+            기록목록
+          </button>
+          <button
+            id="tab-calendar"
+            onClick={() => setActiveTab('calendar')}
+            className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-all ${
+              activeTab === 'calendar' 
+                ? 'bg-white text-emerald-600 shadow-sm' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Calendar size={18} />
+            달력보기
           </button>
         </div>
       </header>
@@ -432,7 +462,185 @@ export default function App() {
           )}
 
 
-          {activeTab === 'record' ? (
+          {activeTab === 'calendar' ? (
+            <motion.div
+              key="calendar-view"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div className="bg-white rounded-3xl shadow-xl shadow-emerald-900/5 border border-slate-100 overflow-hidden p-6">
+                <div className="flex flex-col gap-6">
+                  {/* Calendar Header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
+                        className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400"
+                      >
+                        <ChevronLeft size={20} />
+                      </button>
+                      <h2 className="text-lg font-bold text-slate-800">
+                        {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
+                      </h2>
+                      <button 
+                        onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
+                        className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400"
+                      >
+                        <ChevronRight size={20} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Calendar Grid */}
+                  <div className="grid grid-cols-7 gap-1">
+                    {['일', '월', '화', '수', '목', '금', '토'].map((day, idx) => (
+                      <div key={day} className={`text-center py-2 text-[10px] font-bold uppercase tracking-widest ${idx === 0 ? 'text-rose-400' : idx === 6 ? 'text-blue-400' : 'text-slate-400'}`}>
+                        {day}
+                      </div>
+                    ))}
+                    {(() => {
+                      const year = currentDate.getFullYear();
+                      const month = currentDate.getMonth();
+                      const firstDay = new Date(year, month, 1).getDay();
+                      const daysInMonth = new Date(year, month + 1, 0).getDate();
+                      
+                      const cells = [];
+                      for (let i = 0; i < firstDay; i++) {
+                        cells.push(<div key={`empty-${i}`} className="aspect-square" />);
+                      }
+                      
+                      for (let d = 1; d <= daysInMonth; d++) {
+                        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                        const isToday = getKSTDateStr(new Date().toISOString()) === dateStr;
+                        const isSelected = selectedDate === dateStr;
+                        
+                        // Check if day has data for current mode matching KST date
+                        const dayRecords = records.filter(r => getKSTDateStr(r.timestamp) === dateStr);
+                        const hasMedication = dayRecords.some(r => r.isMedicated);
+                        const hasSymptoms = dayRecords.some(r => r.hasSymptoms);
+                        const hasAnyRecord = dayRecords.length > 0;
+
+                        cells.push(
+                          <button
+                            key={d}
+                            onClick={() => {
+                              if (!hasAnyRecord) {
+                                setSelectedDate(null);
+                              } else {
+                                setSelectedDate(selectedDate === dateStr ? null : dateStr);
+                              }
+                            }}
+                            className={`aspect-square relative flex flex-col items-center justify-center rounded-2xl transition-all group ${
+                              isSelected 
+                                ? 'bg-slate-800 text-white shadow-lg shadow-slate-200' 
+                                : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className={`text-sm font-medium ${isSelected ? 'text-white' : isToday ? 'text-emerald-600 font-bold underline' : 'text-slate-700'}`}>
+                              {d}
+                            </span>
+                            <div className="mt-1 flex gap-1 justify-center">
+                              {hasMedication && (
+                                <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-400' : 'bg-emerald-500'}`} />
+                              )}
+                              {hasSymptoms && (
+                                <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-rose-300' : 'bg-rose-500'}`} />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      }
+                      return cells;
+                    })()}
+                  </div>
+
+                  {/* Selected Date Detail */}
+                  <AnimatePresence>
+                    {selectedDate && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden border-t border-slate-100 pt-6"
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <span className="w-1.5 h-6 bg-emerald-500 rounded-full" />
+                            {selectedDate.split('-')[1]}월 {selectedDate.split('-')[2]}일 기록
+                          </h3>
+                          <button 
+                            onClick={() => setSelectedDate(null)}
+                            className="text-xs text-slate-400 hover:text-slate-600"
+                          >
+                            닫기
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-3 max-h-60 overflow-y-auto pr-2 pb-2">
+                          {records.filter(r => getKSTDateStr(r.timestamp) === selectedDate).length > 0 ? (
+                            records
+                              .filter(r => getKSTDateStr(r.timestamp) === selectedDate)
+                              .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+                              .map(record => (
+                                <div key={record.id} className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between group">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex gap-1.5 min-w-max">
+                                      {record.isMedicated && (
+                                        <div className="p-1.5 bg-white rounded-lg shadow-sm border border-emerald-100">
+                                          <PlusCircle size={14} className="text-emerald-500" />
+                                        </div>
+                                      )}
+                                      {record.hasSymptoms ? (
+                                        <div className="p-1.5 bg-white rounded-lg shadow-sm border border-rose-100">
+                                          <AlertCircle size={14} className="text-rose-500" />
+                                        </div>
+                                      ) : (
+                                        <div className="p-1.5 bg-white rounded-lg shadow-sm border border-sky-100">
+                                          <CheckCircle size={14} className="text-sky-500" />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-xs text-slate-400 font-mono">
+                                        {new Date(record.timestamp).toLocaleTimeString('ko-KR', { 
+                                          hour: '2-digit', 
+                                          minute: '2-digit', 
+                                          hour12: false,
+                                          timeZone: 'Asia/Seoul'
+                                        })}
+                                      </p>
+                                      {record.memo ? (
+                                        <p className="text-sm text-slate-700 leading-snug mt-0.5 truncate">{record.memo}</p>
+                                      ) : (
+                                        <p className="text-xs text-slate-300 italic mt-0.5">증상 없음. 별도 기록 내용 없음</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                                    <button onClick={() => handleEdit(record)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-emerald-600 transition-colors">
+                                      <Edit size={14} />
+                                    </button>
+                                    <button onClick={() => handleDelete(record.id)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-rose-500 transition-colors">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))
+                          ) : (
+                            <div className="py-8 text-center text-slate-400 text-xs italic">
+                              기록이 없습니다.
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </motion.div>
+          ) : activeTab === 'record' ? (
             <motion.div
               key="record-view"
               initial={{ opacity: 0, y: 20 }}
@@ -520,7 +728,7 @@ export default function App() {
                     onClick={() => setHasSymptoms(true)}
                     className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
                       hasSymptoms 
-                        ? 'border-amber-500 bg-amber-50 text-amber-700' 
+                        ? 'border-rose-500 bg-rose-50 text-rose-700' 
                         : 'border-slate-50 bg-slate-50/50 text-slate-400'
                     }`}
                   >
@@ -532,11 +740,11 @@ export default function App() {
                     onClick={() => setHasSymptoms(false)}
                     className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
                       !hasSymptoms 
-                        ? 'border-slate-300 bg-slate-100 text-slate-600' 
+                        ? 'border-sky-500 bg-sky-50 text-sky-700' 
                         : 'border-slate-50 bg-slate-50/50 text-slate-400'
                     }`}
                   >
-                    <XCircle size={18} />
+                    <CheckCircle size={18} />
                     증상 없음
                   </button>
                 </div>
@@ -631,9 +839,9 @@ export default function App() {
                                   <td className="px-4 py-4 text-center">
                                     <div className="flex justify-center">
                                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                                        (record.hasSymptoms ?? false) ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'
+                                        (record.hasSymptoms ?? false) ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'
                                       }`}>
-                                        {(record.hasSymptoms ?? false) ? 'O' : 'X'}
+                                        {(record.hasSymptoms ?? false) ? 'O' : 'OK'}
                                       </span>
                                     </div>
                                   </td>
