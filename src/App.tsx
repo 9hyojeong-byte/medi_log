@@ -36,10 +36,10 @@ export default function App() {
     }).format(d).replace(' ', 'T');
   };
 
-  const [records, setRecords] = useState<MedicationRecord[]>(() => {
-    const saved = localStorage.getItem('medication_records');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbyrxt-jz9mP3G5KsxaV84QGw9IqD0pNX-pM_0fnCt5wAVNrt7k78xllh86gXNgt__Vd/exec";
+
+  const [records, setRecords] = useState<MedicationRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'record' | 'history'>('record');
   
   // Form State
@@ -49,39 +49,82 @@ export default function App() {
   const [memo, setMemo] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Sync with Local Storage
-  useEffect(() => {
-    localStorage.setItem('medication_records', JSON.stringify(records));
-  }, [records]);
-
-  const handleSave = () => {
-    // Treat the input string as Seoul time (+09:00)
-    const finalTimestamp = new Date(customTimestamp + ':00+09:00').toISOString();
-    
-    if (editingId) {
-      setRecords(prev => prev.map(rec => 
-        rec.id === editingId 
-          ? { ...rec, isMedicated, hasSymptoms, memo, timestamp: finalTimestamp } 
-          : rec
-      ));
-      setEditingId(null);
-    } else {
-      const newRecord: MedicationRecord = {
-        id: crypto.randomUUID(),
-        isMedicated,
-        hasSymptoms,
-        memo: memo.trim(),
-        timestamp: finalTimestamp,
-      };
-      setRecords(prev => [newRecord, ...prev]);
+  // Fetch Records from GAS
+  const fetchRecords = async () => {
+    if (!GAS_URL) {
+      setIsLoading(false);
+      return;
     }
     
-    // Reset form
-    setMemo('');
-    setIsMedicated(false);
-    setHasSymptoms(false);
-    setCustomTimestamp(getSeoulNow());
-    setActiveTab('history');
+    setIsLoading(true);
+    try {
+      const response = await fetch(GAS_URL);
+      const data = await response.json();
+      setRecords(data);
+    } catch (error) {
+      console.error('Failed to fetch records:', error);
+      alert('데이터를 불러오는데 실패했습니다. GAS URL 설정을 확인해주세요.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecords();
+  }, []);
+
+  const handleSave = async () => {
+    if (!GAS_URL) {
+      alert('GAS URL이 설정되지 않았습니다.');
+      return;
+    }
+
+    const finalTimestamp = new Date(customTimestamp + ':00+09:00').toISOString();
+    const id = editingId || crypto.randomUUID();
+    
+    const newRecord: MedicationRecord = {
+      id,
+      isMedicated,
+      hasSymptoms,
+      memo: memo.trim(),
+      timestamp: finalTimestamp,
+    };
+
+    setIsLoading(true);
+    try {
+      // Optimistic update
+      if (editingId) {
+        setRecords(prev => prev.map(rec => rec.id === editingId ? newRecord : rec));
+      } else {
+        setRecords(prev => [...prev, newRecord]);
+      }
+
+      await fetch(GAS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        body: JSON.stringify({ 
+          action: 'save', 
+          record: newRecord 
+        }),
+      });
+
+      // no-cors 모드에서는 응답을 읽을 수 없으므로 성공했다고 가정하고 상태 업데이트
+      setEditingId(null);
+      setMemo('');
+      setIsMedicated(false);
+      setHasSymptoms(false);
+      setCustomTimestamp(getSeoulNow());
+      setActiveTab('history');
+    } catch (error) {
+      console.error('Failed to save record:', error);
+      alert('기록 저장 중 오류가 발생했습니다.');
+      fetchRecords(); // Rollback to server state
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleEdit = (record: MedicationRecord) => {
@@ -93,9 +136,32 @@ export default function App() {
     setActiveTab('record');
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('정말로 이 기록을 삭제할까요?')) {
+  const handleDelete = async (id: string) => {
+    if (!GAS_URL) return;
+    if (!confirm('정말로 이 기록을 삭제할까요?')) return;
+
+    setIsLoading(true);
+    try {
+      // Optimistic update
       setRecords(prev => prev.filter(rec => rec.id !== id));
+
+      await fetch(GAS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        body: JSON.stringify({ 
+          action: 'delete', 
+          id 
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to delete record:', error);
+      alert('삭제 중 오류가 발생했습니다.');
+      fetchRecords(); // Rollback
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -317,6 +383,21 @@ export default function App() {
 
       <main className="w-full max-w-2xl relative">
         <AnimatePresence mode="wait">
+          {isLoading && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[100] flex items-center justify-center bg-slate-50/50 backdrop-blur-sm rounded-3xl"
+            >
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest">연결 중...</p>
+              </div>
+            </motion.div>
+          )}
+
+
           {activeTab === 'record' ? (
             <motion.div
               key="record-view"
