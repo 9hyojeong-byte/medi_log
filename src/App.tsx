@@ -195,7 +195,14 @@ export default function App() {
           if (confirm(`${validRecords.length}개의 기록을 가져오시겠습니까?`)) {
             setIsLoading(true);
             try {
-              // Sync with GAS
+              // 1. UI에 즉시 반영 (낙관적 업데이트)
+              setRecords(prev => {
+                const existingIds = new Set(prev.map(r => r.id));
+                const uniqueNewRecords = validRecords.filter(r => !existingIds.has(r.id));
+                return [...uniqueNewRecords, ...prev]; // 새 기록을 위로
+              });
+
+              // 2. 구글 시트로 동기화 전송
               if (GAS_URL) {
                 await fetch(GAS_URL, {
                   method: 'POST',
@@ -206,14 +213,16 @@ export default function App() {
                     records: validRecords 
                   }),
                 });
+                
+                // 전송 후 서버 상태와 최종 동기화
+                setTimeout(() => fetchRecords(), 1000); 
               }
               
-              // Refresh records from server to ensure consistency
-              await fetchRecords();
               alert('데이터를 성공적으로 가져왔습니다.');
             } catch (err) {
               console.error('Import sync error:', err);
-              alert('데이터 동기화 중 오류가 발생했습니다.');
+              alert('데이터 동기화 중 오류가 발생했습니다. (시트 연결 확인 필요)');
+              fetchRecords(); // 오류 시 서버 데이터로 롤백
             } finally {
               setIsLoading(false);
             }
