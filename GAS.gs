@@ -85,6 +85,29 @@ function doPost(e) {
     } else {
       sheet.appendRow(rowData);
     }
+  } else if (action === 'bulk_save') {
+    const records = params.records;
+    const data = sheet.getDataRange().getValues();
+    const existingIds = new Map();
+    for (let i = 1; i < data.length; i++) {
+        existingIds.set(data[i][0], i + 1);
+    }
+
+    records.forEach(record => {
+        const rowData = [
+            record.id, 
+            record.isMedicated, 
+            record.hasSymptoms, 
+            record.memo, 
+            record.timestamp
+        ];
+        const rowNum = existingIds.get(record.id);
+        if (rowNum) {
+            sheet.getRange(rowNum, 1, 1, 5).setValues([rowData]);
+        } else {
+            sheet.appendRow(rowData);
+        }
+    });
   } else if (action === 'delete') {
     const id = params.id;
     const data = sheet.getDataRange().getValues();

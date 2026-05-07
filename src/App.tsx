@@ -36,7 +36,7 @@ export default function App() {
     }).format(d).replace(' ', 'T');
   };
 
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbzD8rEVsbyyiOHV1F2rvE7Y3fx4NO8TdmJniev3iEYOR7NQmx3l97EA9cijE_2Cbm15/exec";
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbw-Zv8qMQvDHGIHYfsv5hAo1yc5RMGYSxe-_INmAw1PHyHBwGmtHbzUrmOpTORARe2K/exec";
 
   const [records, setRecords] = useState<MedicationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,12 +58,14 @@ export default function App() {
     
     setIsLoading(true);
     try {
+      console.log('Fetching from:', GAS_URL);
       const response = await fetch(GAS_URL);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      setRecords(data);
+      setRecords(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error('Failed to fetch records:', error);
-      alert('데이터를 불러오는데 실패했습니다. GAS URL 설정을 확인해주세요.');
+      console.error('GAS Fetch Error:', error);
+      alert('데이터를 불러오는데 실패했습니다.\n1. GAS 배포 시 "모든 사용자(Anyone)" 권한을 주었는지 확인하세요.\n2. 브라우저에서 GAS URL을 직접 열었을 때 데이터가 보이는지 확인하세요.');
     } finally {
       setIsLoading(false);
     }
@@ -172,25 +174,49 @@ export default function App() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
         if (Array.isArray(json)) {
-          // Basic validation of structure
-          const validRecords = json.filter(rec => rec.id && rec.timestamp);
+          // Add IDs to records that don't have them
+          const processedRecords = json.map(rec => ({
+            ...rec,
+            id: rec.id || crypto.randomUUID(),
+            timestamp: rec.timestamp || new Date().toISOString()
+          }));
+
+          const validRecords = processedRecords.filter(rec => rec.timestamp);
           
           if (validRecords.length === 0) {
             alert('유효한 데이터가 없습니다.');
             return;
           }
 
-          if (confirm(`${validRecords.length}개의 기록을 가져오시겠습니까? (중복된 ID는 제외됩니다)`)) {
-            setRecords(prev => {
-              const existingIds = new Set(prev.map(r => r.id));
-              const uniqueNewRecords = validRecords.filter(r => !existingIds.has(r.id));
-              return [...prev, ...uniqueNewRecords];
-            });
-            alert('데이터를 성공적으로 가져왔습니다.');
+          if (confirm(`${validRecords.length}개의 기록을 가져오시겠습니까?`)) {
+            setIsLoading(true);
+            try {
+              // Sync with GAS
+              if (GAS_URL) {
+                await fetch(GAS_URL, {
+                  method: 'POST',
+                  mode: 'no-cors',
+                  headers: { 'Content-Type': 'text/plain' },
+                  body: JSON.stringify({ 
+                    action: 'bulk_save', 
+                    records: validRecords 
+                  }),
+                });
+              }
+              
+              // Refresh records from server to ensure consistency
+              await fetchRecords();
+              alert('데이터를 성공적으로 가져왔습니다.');
+            } catch (err) {
+              console.error('Import sync error:', err);
+              alert('데이터 동기화 중 오류가 발생했습니다.');
+            } finally {
+              setIsLoading(false);
+            }
           }
         }
       } catch (err) {
@@ -198,7 +224,6 @@ export default function App() {
       }
     };
     reader.readAsText(file);
-    // Reset input
     e.target.value = '';
     setShowExportOptions(false);
   };
