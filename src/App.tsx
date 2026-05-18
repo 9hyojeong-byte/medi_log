@@ -22,7 +22,10 @@ import {
   CheckCircle,
   AlertCircle,
   Edit,
-  X
+  X,
+  Camera,
+  Image as ImageIcon,
+  FileText
 } from 'lucide-react';
 import { MedicationRecord } from './types.ts';
 
@@ -41,7 +44,7 @@ export default function App() {
     }).format(d).replace(' ', 'T');
   };
 
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbw-Zv8qMQvDHGIHYfsv5hAo1yc5RMGYSxe-_INmAw1PHyHBwGmtHbzUrmOpTORARe2K/exec";
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbwSHVIy4Uo-eNsQr7LS7sf9oAQaoDTjeC7tbS2gb3x1FhDAaKqIoRxG8a0IiLIXZU-5/exec";
 
   const getKSTDateStr = (isoString: string) => {
     try {
@@ -57,6 +60,7 @@ export default function App() {
   const [records, setRecords] = useState<MedicationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'record' | 'history' | 'calendar'>('record');
+  const [recordType, setRecordType] = useState<'status' | 'prescription'>('status');
   
   // Calendar State
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -65,6 +69,7 @@ export default function App() {
   const [hasSymptoms, setHasSymptoms] = useState(false);
   const [customTimestamp, setCustomTimestamp] = useState(getSeoulNow()); 
   const [memo, setMemo] = useState('');
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Fetch Records from GAS
@@ -104,9 +109,11 @@ export default function App() {
     
     const newRecord: MedicationRecord = {
       id,
-      isMedicated,
-      hasSymptoms,
+      type: recordType,
+      isMedicated: recordType === 'status' ? isMedicated : false,
+      hasSymptoms: recordType === 'status' ? hasSymptoms : false,
       memo: memo.trim(),
+      imageUrl: recordType === 'prescription' ? (imageUrl || undefined) : undefined,
       timestamp: finalTimestamp,
     };
 
@@ -134,6 +141,7 @@ export default function App() {
       // no-cors 모드에서는 응답을 읽을 수 없으므로 성공했다고 가정하고 상태 업데이트
       setEditingId(null);
       setMemo('');
+      setImageUrl(null);
       setIsMedicated(false);
       setHasSymptoms(false);
       setCustomTimestamp(getSeoulNow());
@@ -149,9 +157,11 @@ export default function App() {
 
   const handleEdit = (record: MedicationRecord) => {
     setEditingId(record.id);
+    setRecordType(record.type || 'status');
     setIsMedicated(record.isMedicated);
     setHasSymptoms(record.hasSymptoms || false);
     setMemo(record.memo);
+    setImageUrl(record.imageUrl || null);
     setCustomTimestamp(getSeoulNow(record.timestamp));
     setActiveTab('record');
   };
@@ -518,8 +528,9 @@ export default function App() {
                         
                         // Check if day has data for current mode matching KST date
                         const dayRecords = records.filter(r => getKSTDateStr(r.timestamp) === dateStr);
-                        const hasMedication = dayRecords.some(r => r.isMedicated);
-                        const hasSymptoms = dayRecords.some(r => r.hasSymptoms);
+                        const hasMedication = dayRecords.some(r => r.isMedicated && r.type !== 'prescription');
+                        const hasSymptoms = dayRecords.some(r => r.hasSymptoms && r.type !== 'prescription');
+                        const hasPrescription = dayRecords.some(r => r.type === 'prescription');
                         const hasAnyRecord = dayRecords.length > 0;
 
                         cells.push(
@@ -541,12 +552,15 @@ export default function App() {
                             <span className={`text-sm font-medium ${isSelected ? 'text-white' : isToday ? 'text-emerald-600 font-bold underline' : 'text-slate-700'}`}>
                               {d}
                             </span>
-                            <div className="mt-1 flex gap-1 justify-center">
+                            <div className="mt-1 flex gap-0.5 justify-center flex-wrap max-w-full px-1">
                               {hasMedication && (
                                 <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-400' : 'bg-emerald-500'}`} />
                               )}
                               {hasSymptoms && (
                                 <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-rose-300' : 'bg-rose-500'}`} />
+                              )}
+                              {hasPrescription && (
+                                <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-blue-300' : 'bg-blue-500'}`} />
                               )}
                             </div>
                           </button>
@@ -584,48 +598,66 @@ export default function App() {
                               .filter(r => getKSTDateStr(r.timestamp) === selectedDate)
                               .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
                               .map(record => (
-                                <div key={record.id} className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between group">
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex gap-1.5 min-w-max">
-                                      {record.isMedicated && (
-                                        <div className="p-1.5 bg-white rounded-lg shadow-sm border border-emerald-100">
-                                          <PlusCircle size={14} className="text-emerald-500" />
-                                        </div>
-                                      )}
-                                      {record.hasSymptoms ? (
-                                        <div className="p-1.5 bg-white rounded-lg shadow-sm border border-rose-100">
-                                          <AlertCircle size={14} className="text-rose-500" />
-                                        </div>
-                                      ) : (
-                                        <div className="p-1.5 bg-white rounded-lg shadow-sm border border-sky-100">
-                                          <CheckCircle size={14} className="text-sky-500" />
-                                        </div>
-                                      )}
+                                <div key={record.id} className="p-3 bg-slate-50 rounded-2xl flex flex-col gap-3 group">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className="flex gap-1.5 min-w-max">
+                                        {record.type === 'prescription' ? (
+                                          <div className="p-1.5 bg-white rounded-lg shadow-sm border border-blue-100">
+                                            <FileText size={14} className="text-blue-500" />
+                                          </div>
+                                        ) : (
+                                          <>
+                                            {record.isMedicated && (
+                                              <div className="p-1.5 bg-white rounded-lg shadow-sm border border-emerald-100">
+                                                <PlusCircle size={14} className="text-emerald-500" />
+                                              </div>
+                                            )}
+                                            {record.hasSymptoms ? (
+                                              <div className="p-1.5 bg-white rounded-lg shadow-sm border border-rose-100">
+                                                <AlertCircle size={14} className="text-rose-500" />
+                                              </div>
+                                            ) : (
+                                              <div className="p-1.5 bg-white rounded-lg shadow-sm border border-sky-100">
+                                                <CheckCircle size={14} className="text-sky-500" />
+                                              </div>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="text-xs text-slate-400 font-mono">
+                                          {new Date(record.timestamp).toLocaleTimeString('ko-KR', { 
+                                            hour: '2-digit', 
+                                            minute: '2-digit', 
+                                            hour12: false,
+                                            timeZone: 'Asia/Seoul'
+                                          })}
+                                          {record.type === 'prescription' && <span className="ml-2 text-[10px] text-blue-500 font-bold uppercase tracking-widest">처방기록</span>}
+                                        </p>
+                                        {record.memo ? (
+                                          <p className="text-sm text-slate-700 leading-snug mt-0.5">{record.memo}</p>
+                                        ) : (
+                                          <p className="text-xs text-slate-300 italic mt-0.5">
+                                            {record.type === 'prescription' ? '별도 메모 없음' : '증상 없음. 별도 기록 내용 없음'}
+                                          </p>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="min-w-0">
-                                      <p className="text-xs text-slate-400 font-mono">
-                                        {new Date(record.timestamp).toLocaleTimeString('ko-KR', { 
-                                          hour: '2-digit', 
-                                          minute: '2-digit', 
-                                          hour12: false,
-                                          timeZone: 'Asia/Seoul'
-                                        })}
-                                      </p>
-                                      {record.memo ? (
-                                        <p className="text-sm text-slate-700 leading-snug mt-0.5 truncate">{record.memo}</p>
-                                      ) : (
-                                        <p className="text-xs text-slate-300 italic mt-0.5">증상 없음. 별도 기록 내용 없음</p>
-                                      )}
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                                      <button onClick={() => handleEdit(record)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-emerald-600 transition-colors">
+                                        <Edit size={14} />
+                                      </button>
+                                      <button onClick={() => handleDelete(record.id)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-rose-500 transition-colors">
+                                        <Trash2 size={14} />
+                                      </button>
                                     </div>
                                   </div>
-                                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                                    <button onClick={() => handleEdit(record)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-emerald-600 transition-colors">
-                                      <Edit size={14} />
-                                    </button>
-                                    <button onClick={() => handleDelete(record.id)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-rose-500 transition-colors">
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </div>
+                                  {record.imageUrl && (
+                                    <div className="rounded-xl overflow-hidden border border-slate-100 aspect-video bg-white">
+                                      <img src={record.imageUrl} alt="Prescription" className="w-full h-full object-contain cursor-pointer" onClick={() => window.open(record.imageUrl, '_blank')} />
+                                    </div>
+                                  )}
                                 </div>
                               ))
                           ) : (
@@ -651,7 +683,7 @@ export default function App() {
             >
               <div className="flex items-center justify-between border-b border-slate-50 pb-4">
                 <h2 id="record-title" className="text-xl font-semibold text-slate-800">
-                  {editingId ? '기록 수정하기' : '상태 기록하기'}
+                  {editingId ? '기록 수정하기' : recordType === 'status' ? '상태 기록하기' : '처방 기록하기'}
                 </h2>
                 {editingId && (
                   <button 
@@ -659,6 +691,7 @@ export default function App() {
                     onClick={() => {
                       setEditingId(null);
                       setMemo('');
+                      setImageUrl(null);
                       setIsMedicated(false);
                       setHasSymptoms(false);
                       setCustomTimestamp(getSeoulNow());
@@ -670,6 +703,38 @@ export default function App() {
                   </button>
                 )}
               </div>
+
+              {/* Record Type Toggle */}
+              {!editingId && (
+                <div role="tablist" className="flex bg-slate-100 p-1 rounded-xl">
+                  <button
+                    role="tab"
+                    aria-selected={recordType === 'status'}
+                    onClick={() => setRecordType('status')}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                      recordType === 'status' 
+                        ? 'bg-white text-emerald-600 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <AlertCircle size={16} />
+                    상태 기록
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={recordType === 'prescription'}
+                    onClick={() => setRecordType('prescription')}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                      recordType === 'prescription' 
+                        ? 'bg-white text-blue-600 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <FileText size={16} />
+                    처방 기록
+                  </button>
+                </div>
+              )}
 
               {/* Timestamp Field */}
               <div id="timestamp-field" className="flex flex-col gap-3">
@@ -684,83 +749,148 @@ export default function App() {
                 />
               </div>
 
-              {/* Medication Toggle */}
-              <div id="medication-toggle" className="flex flex-col gap-3">
-                <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                  <PlusCircle size={14} className="text-emerald-500" /> 투약 여부
-                </label>
-                <div className="flex gap-3">
-                  <button
-                    id="btn-medicated-yes"
-                    onClick={() => setIsMedicated(true)}
-                    className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
-                      isMedicated 
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
-                        : 'border-slate-50 bg-slate-50/50 text-slate-400'
-                    }`}
-                  >
-                    <CheckCircle2 size={18} />
-                    먹었어요
-                  </button>
-                  <button
-                    id="btn-medicated-no"
-                    onClick={() => setIsMedicated(false)}
-                    className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
-                      !isMedicated 
-                        ? 'border-slate-300 bg-slate-100 text-slate-600' 
-                        : 'border-slate-50 bg-slate-50/50 text-slate-400'
-                    }`}
-                  >
-                    <XCircle size={18} />
-                    안 먹었어요
-                  </button>
-                </div>
-              </div>
+              {recordType === 'status' ? (
+                <>
+                  {/* Medication Toggle */}
+                  <div id="medication-toggle" className="flex flex-col gap-3">
+                    <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                      <PlusCircle size={14} className="text-emerald-500" /> 투약 여부
+                    </label>
+                    <div className="flex gap-3">
+                      <button
+                        id="btn-medicated-yes"
+                        onClick={() => setIsMedicated(true)}
+                        className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
+                          isMedicated 
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
+                            : 'border-slate-50 bg-slate-50/50 text-slate-400'
+                        }`}
+                      >
+                        <CheckCircle2 size={18} />
+                        먹었어요
+                      </button>
+                      <button
+                        id="btn-medicated-no"
+                        onClick={() => setIsMedicated(false)}
+                        className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
+                          !isMedicated 
+                            ? 'border-slate-300 bg-slate-100 text-slate-600' 
+                            : 'border-slate-50 bg-slate-50/50 text-slate-400'
+                        }`}
+                      >
+                        <XCircle size={18} />
+                        안 먹었어요
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Symptoms Toggle */}
-              <div id="symptoms-toggle" className="flex flex-col gap-3">
-                <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                  <History size={14} className="text-emerald-500" /> 증상 유무
-                </label>
-                <div className="flex gap-3">
-                  <button
-                    id="btn-symptoms-yes"
-                    onClick={() => setHasSymptoms(true)}
-                    className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
-                      hasSymptoms 
-                        ? 'border-rose-500 bg-rose-50 text-rose-700' 
-                        : 'border-slate-50 bg-slate-50/50 text-slate-400'
-                    }`}
-                  >
-                    <CheckCircle2 size={18} />
-                    증상 있음
-                  </button>
-                  <button
-                    id="btn-symptoms-no"
-                    onClick={() => setHasSymptoms(false)}
-                    className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
-                      !hasSymptoms 
-                        ? 'border-sky-500 bg-sky-50 text-sky-700' 
-                        : 'border-slate-50 bg-slate-50/50 text-slate-400'
-                    }`}
-                  >
-                    <CheckCircle size={18} />
-                    증상 없음
-                  </button>
+                  {/* Symptoms Toggle */}
+                  <div id="symptoms-toggle" className="flex flex-col gap-3">
+                    <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                      <History size={14} className="text-emerald-500" /> 증상 유무
+                    </label>
+                    <div className="flex gap-3">
+                      <button
+                        id="btn-symptoms-yes"
+                        onClick={() => setHasSymptoms(true)}
+                        className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
+                          hasSymptoms 
+                            ? 'border-rose-500 bg-rose-50 text-rose-700' 
+                            : 'border-slate-50 bg-slate-50/50 text-slate-400'
+                        }`}
+                      >
+                        <CheckCircle2 size={18} />
+                        증상 있음
+                      </button>
+                      <button
+                        id="btn-symptoms-no"
+                        onClick={() => setHasSymptoms(false)}
+                        className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
+                          !hasSymptoms 
+                            ? 'border-sky-500 bg-sky-50 text-sky-700' 
+                            : 'border-slate-50 bg-slate-50/50 text-slate-400'
+                        }`}
+                      >
+                        <CheckCircle size={18} />
+                        증상 없음
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Prescription Image Upload */
+                <div id="prescription-upload" className="flex flex-col gap-3">
+                  <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <Camera size={14} className="text-blue-500" /> 처방전 사진 첨부
+                  </label>
+                  <div className="relative group">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setImageUrl(reader.result as string);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="hidden"
+                      id="prescription-file"
+                    />
+                    <label
+                      htmlFor="prescription-file"
+                      className={`w-full h-48 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-3 cursor-pointer transition-all overflow-hidden bg-slate-50/50 ${
+                        imageUrl 
+                          ? 'border-blue-500 p-0' 
+                          : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50'
+                      }`}
+                    >
+                      {imageUrl ? (
+                        <div className="relative w-full h-full">
+                          <img src={imageUrl} alt="Prescription" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Camera className="text-white" size={32} />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="p-4 bg-blue-50 text-blue-500 rounded-full">
+                            <Camera size={24} />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-bold text-slate-600">사진 촬영 또는 업로드</p>
+                            <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-bold">Tap to capture</p>
+                          </div>
+                        </>
+                      )}
+                    </label>
+                    {imageUrl && (
+                      <button 
+                        onClick={() => setImageUrl(null)}
+                        className="absolute -top-2 -right-2 p-1.5 bg-rose-500 text-white rounded-full shadow-lg hover:bg-rose-600 transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Memo Field */}
               <div id="memo-field" className="flex flex-col gap-3">
                 <label id="memo-label" htmlFor="memo-input" className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                  메모 
+                  {recordType === 'status' ? '메모' : '처방 정보 메모'}
                   <span className="text-[10px] font-normal text-slate-300 italic opacity-80">(선택 사항)</span>
                 </label>
                 <textarea
                   id="memo-input"
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
-                  placeholder="증상이나 기분이 어떠신가요?"
+                  placeholder={recordType === 'status' ? "증상이나 기분이 어떠신가요?" : "어떤 약을 처방받으셨나요?"}
                   className="w-full min-h-[100px] p-4 rounded-xl border-2 border-slate-100 focus:border-emerald-500 focus:ring-0 outline-none transition-all resize-none text-slate-700 leading-relaxed text-sm"
                 />
               </div>
@@ -769,10 +899,16 @@ export default function App() {
               <button
                 id="save-btn"
                 onClick={handleSave}
-                className="w-full py-4 rounded-2xl bg-slate-800 text-white font-bold text-lg flex items-center justify-center gap-2 hover:bg-slate-900 transition-all active:scale-95 shadow-lg shadow-slate-200"
+                disabled={recordType === 'prescription' && !imageUrl}
+                className={`w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-slate-200 ${
+                  recordType === 'prescription' && !imageUrl
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-slate-800 text-white hover:bg-slate-900 shadow-slate-200'
+                }`}
               >
                 <Save size={20} />
                 {editingId ? '기록 업데이트' : '기록 저장하기'}
+                {recordType === 'prescription' && !imageUrl && ' (사진 필수)'}
               </button>
             </motion.div>
           ) : (
@@ -810,15 +946,17 @@ export default function App() {
                           <thead>
                             <tr className="bg-slate-50/50 border-b border-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-tight">
                               <th className="px-4 py-3 min-w-[80px]">시간</th>
+                              <th className="px-4 py-3 min-w-[100px]">유형</th>
                               <th className="px-4 py-3 text-center">투약</th>
                               <th className="px-4 py-3 text-center">증상</th>
-                              <th className="px-4 py-3">메모</th>
+                              <th className="px-4 py-3">메모 / 사진</th>
                               <th className="px-4 py-3 text-right">관리</th>
                             </tr>
                           </thead>
                           <tbody>
                             {dateRecords.map((record) => {
                               const { time } = formatDate(record.timestamp);
+                              const isPrescription = record.type === 'prescription';
                               return (
                                 <tr key={record.id} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group">
                                   <td className="px-4 py-4 font-medium text-slate-600 whitespace-nowrap">
@@ -827,26 +965,51 @@ export default function App() {
                                       {time}
                                     </div>
                                   </td>
+                                  <td className="px-4 py-4 whitespace-nowrap">
+                                    {isPrescription ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">
+                                        <FileText size={10} /> 처방전
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                                        <AlertCircle size={10} /> 상태
+                                      </span>
+                                    )}
+                                  </td>
                                   <td className="px-4 py-4 text-center">
                                     <div className="flex justify-center">
-                                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                                        record.isMedicated ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-                                      }`}>
-                                        {record.isMedicated ? 'O' : 'X'}
-                                      </span>
+                                      {!isPrescription && (
+                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                          record.isMedicated ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
+                                        }`}>
+                                          {record.isMedicated ? 'O' : 'X'}
+                                        </span>
+                                      )}
                                     </div>
                                   </td>
                                   <td className="px-4 py-4 text-center">
                                     <div className="flex justify-center">
-                                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                                        (record.hasSymptoms ?? false) ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'
-                                      }`}>
-                                        {(record.hasSymptoms ?? false) ? 'O' : 'OK'}
-                                      </span>
+                                      {!isPrescription && (
+                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                          (record.hasSymptoms ?? false) ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'
+                                        }`}>
+                                          {(record.hasSymptoms ?? false) ? 'O' : 'OK'}
+                                        </span>
+                                      )}
                                     </div>
                                   </td>
                                   <td className="px-4 py-4 text-slate-500 italic min-w-[150px] whitespace-pre-wrap break-words leading-relaxed text-xs">
-                                    {record.memo || <span className="text-slate-200">-</span>}
+                                    <div className="flex flex-col gap-2">
+                                      {record.memo || (isPrescription ? '' : <span className="text-slate-200">-</span>)}
+                                      {record.imageUrl && (
+                                        <div 
+                                          className="w-12 h-12 rounded-lg border border-slate-100 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                                          onClick={() => window.open(record.imageUrl, '_blank')}
+                                        >
+                                          <img src={record.imageUrl} alt="Prescription" className="w-full h-full object-cover" />
+                                        </div>
+                                      )}
+                                    </div>
                                   </td>
                                   <td className="px-4 py-4 text-right">
                                     <div className="flex items-center justify-end gap-0.5">

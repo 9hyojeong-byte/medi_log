@@ -13,7 +13,7 @@ function getSheet() {
   let sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(['id', 'isMedicated', 'hasSymptoms', 'memo', 'timestamp']);
+    sheet.appendRow(['id', 'type', 'isMedicated', 'hasSymptoms', 'memo', 'imageUrl', 'timestamp']);
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -52,6 +52,17 @@ function doPost(e) {
 
   const sheet = getSheet();
   const action = params.action;
+  
+  // 만약 헤더가 구버전이라면 업데이트 (컬럼 추가)
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('type') === -1) {
+    sheet.insertColumnAfter(1); // id 다음
+    sheet.getRange(1, 2).setValue('type');
+  }
+  if (headers.indexOf('imageUrl') === -1) {
+    sheet.insertColumnBefore(headers.length + 1); // timestamp 직전
+    sheet.getRange(1, sheet.getLastColumn()).setValue('imageUrl');
+  }
 
   if (action === 'save') {
     const record = params.record;
@@ -69,17 +80,18 @@ function doPost(e) {
       records.forEach(record => {
         const rowData = [
           record.id, 
+          record.type || 'status',
           record.isMedicated === true || record.isMedicated === 'true', 
           record.hasSymptoms === true || record.hasSymptoms === 'true', 
           record.memo || '', 
+          record.imageUrl || '',
           record.timestamp
         ];
         const foundRow = existingIds[record.id];
         if (foundRow) {
-          sheet.getRange(foundRow, 1, 1, 5).setValues([rowData]);
+          sheet.getRange(foundRow, 1, 1, 7).setValues([rowData]);
         } else {
           sheet.appendRow(rowData);
-          // 새로 추가된 행도 추적 (중복 방지)
           existingIds[record.id] = sheet.getLastRow();
         }
       });
@@ -111,13 +123,15 @@ function saveRecord(sheet, record) {
   }
   const rowData = [
     record.id, 
+    record.type || 'status',
     record.isMedicated === true || record.isMedicated === 'true', 
     record.hasSymptoms === true || record.hasSymptoms === 'true', 
     record.memo || '', 
+    record.imageUrl || '',
     record.timestamp
   ];
   if (foundRow > -1) {
-    sheet.getRange(foundRow, 1, 1, 5).setValues([rowData]);
+    sheet.getRange(foundRow, 1, 1, 7).setValues([rowData]);
   } else {
     sheet.appendRow(rowData);
   }
