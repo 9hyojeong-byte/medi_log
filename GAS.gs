@@ -11,10 +11,23 @@ const SHEET_NAME = 'Records';
 function getSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(SHEET_NAME);
+  const targetHeaders = ['id', 'type', 'isMedicated', 'hasSymptoms', 'memo', 'imageUrl', 'timestamp'];
+  
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(['id', 'type', 'isMedicated', 'hasSymptoms', 'memo', 'imageUrl', 'timestamp']);
+    sheet.appendRow(targetHeaders);
     sheet.setFrozenRows(1);
+  } else {
+    // 헤더 검증 및 보정
+    const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (JSON.stringify(currentHeaders) !== JSON.stringify(targetHeaders)) {
+      // 데이터가 있는 경우 컬럼 위치를 조정하기는 어려우므로 헤더만이라도 동기화 시도
+      // (기존 데이터가 5열인 경우 6, 7열을 추가하고 헤더를 맞춤)
+      if (sheet.getLastColumn() < targetHeaders.length) {
+        sheet.insertColumnsAfter(sheet.getLastColumn(), targetHeaders.length - sheet.getLastColumn());
+      }
+      sheet.getRange(1, 1, 1, targetHeaders.length).setValues([targetHeaders]);
+    }
   }
   return sheet;
 }
@@ -27,12 +40,27 @@ function doGet(e) {
   const headers = data.shift();
   const json = data.map(row => {
     const obj = {};
-    headers.forEach((h, i) => {
-      let val = row[i];
-      if (h === 'isMedicated' || h === 'hasSymptoms') {
-        val = (val === true || val === 'true' || val === 1);
+    // 정해진 필드명과 인덱스로 매핑 (헤더 의존성 낮춤)
+    const fieldMapping = {
+      'id': 0,
+      'type': 1,
+      'isMedicated': 2,
+      'hasSymptoms': 3,
+      'memo': 4,
+      'imageUrl': 5,
+      'timestamp': 6
+    };
+    
+    Object.keys(fieldMapping).forEach(key => {
+      const idx = fieldMapping[key];
+      let val = row[idx] || '';
+      if (key === 'isMedicated' || key === 'hasSymptoms') {
+        val = (val === true || val === 'true' || val === 1 || String(val).toUpperCase() === 'TRUE');
       }
-      obj[h] = val;
+      if (key === 'timestamp' && val instanceof Date) {
+        val = val.toISOString();
+      }
+      obj[key] = val;
     });
     return obj;
   });
@@ -52,17 +80,6 @@ function doPost(e) {
 
   const sheet = getSheet();
   const action = params.action;
-  
-  // 만약 헤더가 구버전이라면 업데이트 (컬럼 추가)
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  if (headers.indexOf('type') === -1) {
-    sheet.insertColumnAfter(1); // id 다음
-    sheet.getRange(1, 2).setValue('type');
-  }
-  if (headers.indexOf('imageUrl') === -1) {
-    sheet.insertColumnBefore(headers.length + 1); // timestamp 직전
-    sheet.getRange(1, sheet.getLastColumn()).setValue('imageUrl');
-  }
 
   if (action === 'save') {
     const record = params.record;
@@ -81,9 +98,9 @@ function doPost(e) {
         const rowData = [
           record.id, 
           record.type || 'status',
-          record.isMedicated === true || record.isMedicated === 'true', 
-          record.hasSymptoms === true || record.hasSymptoms === 'true', 
-          record.memo || '', 
+          record.isMedicated === true || record.isMedicated === 'true' || String(record.isMedicated).toUpperCase() === 'TRUE', 
+          record.hasSymptoms === true || record.hasSymptoms === 'true' || String(record.hasSymptoms).toUpperCase() === 'TRUE', 
+          String(record.memo || ''), 
           record.imageUrl || '',
           record.timestamp
         ];
@@ -124,9 +141,9 @@ function saveRecord(sheet, record) {
   const rowData = [
     record.id, 
     record.type || 'status',
-    record.isMedicated === true || record.isMedicated === 'true', 
-    record.hasSymptoms === true || record.hasSymptoms === 'true', 
-    record.memo || '', 
+    record.isMedicated === true || record.isMedicated === 'true' || String(record.isMedicated).toUpperCase() === 'TRUE', 
+    record.hasSymptoms === true || record.hasSymptoms === 'true' || String(record.hasSymptoms).toUpperCase() === 'TRUE', 
+    String(record.memo || ''), 
     record.imageUrl || '',
     record.timestamp
   ];

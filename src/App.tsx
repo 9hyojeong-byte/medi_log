@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   PlusCircle, 
@@ -44,16 +44,26 @@ export default function App() {
     }).format(d).replace(' ', 'T');
   };
 
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbwSHVIy4Uo-eNsQr7LS7sf9oAQaoDTjeC7tbS2gb3x1FhDAaKqIoRxG8a0IiLIXZU-5/exec";
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbxR5Wc7rJU_SStXj_Nyo3ocplNO8UVJ7VE5oy7YJjstpRU5VgTWhlkhLsBS77BK018M/exec";
 
   const getKSTDateStr = (isoString: string) => {
+    if (!isoString) return '';
     try {
       const date = new Date(isoString);
-      // Get date in KST (UTC+9)
-      const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
-      return kstDate.toISOString().split('T')[0];
+      if (isNaN(date.getTime())) {
+        if (typeof isoString === 'string') {
+          return isoString.split(/[ T]/)[0] || '';
+        }
+        return '';
+      }
+      return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(date);
     } catch {
-      return isoString.split('T')[0];
+      return typeof isoString === 'string' ? isoString.split(/[ T]/)[0] : '';
     }
   };
 
@@ -305,22 +315,36 @@ export default function App() {
   };
 
   const formatDate = (isoStr: string) => {
-    const date = new Date(isoStr);
-    return {
-      date: date.toLocaleDateString('sv-SE', { // Using sv-SE for YYYY-MM-DD
-        timeZone: 'Asia/Seoul',
-      }),
-      time: date.toLocaleTimeString('ko-KR', { 
-        timeZone: 'Asia/Seoul',
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: false
-      })
-    };
+    if (!isoStr) return { date: '-', time: '-' };
+    try {
+      const date = new Date(isoStr);
+      if (isNaN(date.getTime())) {
+        // Fallback for non-standard formats often found in spreadsheets
+        if (typeof isoStr === 'string' && isoStr.includes('-')) {
+          const parts = isoStr.split(/[ T]/);
+          return { date: parts[0] || 'Invalid', time: parts[1] || '00:00' };
+        }
+        return { date: 'Invalid Date', time: 'Invalid Time' };
+      }
+      return {
+        date: date.toLocaleDateString('sv-SE', {
+          timeZone: 'Asia/Seoul',
+        }),
+        time: date.toLocaleTimeString('ko-KR', { 
+          timeZone: 'Asia/Seoul',
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: false
+        })
+      };
+    } catch (e) {
+      return { date: 'Error', time: 'Error' };
+    }
   };
 
   const groupedRecords = useMemo(() => {
     const groups: Record<string, MedicationRecord[]> = {};
+    // Sort all records by timestamp (ascending for internal day consistency)
     const sorted = [...records].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     
     sorted.forEach(record => {
@@ -331,8 +355,9 @@ export default function App() {
       groups[date].push(record);
     });
     
+    // Sort day groups by date descending (recent days first)
     return Object.entries(groups).sort((a, b) => {
-      return new Date(a[1][0].timestamp).getTime() - new Date(b[1][0].timestamp).getTime();
+      return b[0].localeCompare(a[0]);
     });
   }, [records]);
 
