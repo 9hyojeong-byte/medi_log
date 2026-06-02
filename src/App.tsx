@@ -67,8 +67,24 @@ export default function App() {
     }
   };
 
-  const [records, setRecords] = useState<MedicationRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [records, setRecords] = useState<MedicationRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('medication_records');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error('Failed to parse cached records:', e);
+      return [];
+    }
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    try {
+      const saved = localStorage.getItem('medication_records');
+      return saved ? false : true;
+    } catch {
+      return true;
+    }
+  });
+  const [isBackgroundFetching, setIsBackgroundFetching] = useState(false);
   const [activeTab, setActiveTab] = useState<'record' | 'history' | 'calendar'>('record');
   const [recordType, setRecordType] = useState<'status' | 'prescription'>('status');
   
@@ -83,30 +99,53 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Fetch Records from GAS
-  const fetchRecords = async () => {
+  const fetchRecords = async (isBackground = false) => {
     if (!GAS_URL) {
       setIsLoading(false);
       return;
     }
     
-    setIsLoading(true);
+    if (!isBackground) {
+      setIsLoading(true);
+    } else {
+      setIsBackgroundFetching(true);
+    }
+
     try {
       console.log('Fetching from:', GAS_URL);
       const response = await fetch(GAS_URL);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      setRecords(Array.isArray(data) ? data : []);
+      const freshData = Array.isArray(data) ? data : [];
+      
+      setRecords(prev => {
+        const hasChanged = JSON.stringify(prev) !== JSON.stringify(freshData);
+        if (hasChanged) {
+          localStorage.setItem('medication_records', JSON.stringify(freshData));
+          return freshData;
+        }
+        return prev;
+      });
     } catch (error) {
       console.error('GAS Fetch Error:', error);
-      alert('데이터를 불러오는데 실패했습니다.\n1. GAS 배포 시 "모든 사용자(Anyone)" 권한을 주었는지 확인하세요.\n2. 브라우저에서 GAS URL을 직접 열었을 때 데이터가 보이는지 확인하세요.');
+      if (!isBackground) {
+        alert('데이터를 불러오는데 실패했습니다.\n1. GAS 배포 시 "모든 사용자(Anyone)" 권한을 주었는지 확인하세요.\n2. 브라우저에서 GAS URL을 직접 열었을 때 데이터가 보이는지 확인하세요.');
+      }
     } finally {
       setIsLoading(false);
+      setIsBackgroundFetching(false);
     }
   };
 
   useEffect(() => {
-    fetchRecords();
+    const saved = localStorage.getItem('medication_records');
+    const hasCache = !!saved;
+    fetchRecords(hasCache);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('medication_records', JSON.stringify(records));
+  }, [records]);
 
   const handleSave = async () => {
     if (!GAS_URL) {
@@ -482,22 +521,90 @@ export default function App() {
 
       <main className="w-full max-w-2xl relative">
         <AnimatePresence mode="wait">
-          {isLoading && (
+          {/* Background synchronization indicator (small badge, clean styling) */}
+          {isBackgroundFetching && (
+            <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full text-[10px] text-emerald-600 shadow-sm z-50">
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+              <span className="font-semibold tracking-tight">구글시트 동기화 중...</span>
+            </div>
+          )}
+
+          {/* Active save/delete loading overlay (when data already exists) */}
+          {isLoading && records.length > 0 && (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-[100] flex items-center justify-center bg-slate-50/50 backdrop-blur-sm rounded-3xl"
+              className="absolute inset-0 z-[100] flex items-center justify-center bg-slate-50/30 backdrop-blur-[2px] rounded-3xl"
             >
-              <div className="flex flex-col items-center gap-2">
+              <div className="flex flex-col items-center gap-2 bg-white/95 px-5 py-4 rounded-2xl shadow-xl shadow-slate-200 border border-slate-100">
                 <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest">연결 중...</p>
+                <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest">처리 중...</p>
               </div>
             </motion.div>
           )}
 
+          {/* Core Skeleton screen for first-load (records are empty, API is loading) */}
+          {isLoading && records.length === 0 && (
+            <motion.div
+              key="skeleton-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full max-w-2xl flex flex-col gap-6"
+            >
+              {activeTab === 'record' ? (
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 flex flex-col gap-6 mx-auto w-full max-w-md animate-pulse">
+                  <div className="h-7 bg-slate-200 rounded w-1/3 mb-4" />
+                  <div className="h-10 bg-slate-100 rounded-xl" />
+                  <div className="flex flex-col gap-3">
+                    <div className="h-4 bg-slate-100 rounded w-1/4" />
+                    <div className="h-12 bg-slate-100 rounded-xl" />
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <div className="h-4 bg-slate-100 rounded w-1/4" />
+                    <div className="flex gap-3">
+                      <div className="flex-1 h-12 bg-slate-100 rounded-xl" />
+                      <div className="flex-1 h-12 bg-slate-100 rounded-xl" />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <div className="h-4 bg-slate-100 rounded w-1/4" />
+                    <div className="h-28 bg-slate-100 rounded-xl" />
+                  </div>
+                  <div className="h-14 bg-slate-200 rounded-2xl" />
+                </div>
+              ) : activeTab === 'history' ? (
+                <div className="flex flex-col gap-10 animate-pulse">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="flex flex-col gap-3">
+                      <div className="h-6 bg-slate-200 rounded w-1/4" />
+                      {[1, 2].map((j) => (
+                        <div key={j} className="bg-white rounded-3xl p-5 border border-slate-100 flex items-center justify-between shadow-sm">
+                          <div className="flex items-center gap-4 w-full">
+                            <div className="w-10 h-10 bg-slate-200 rounded-2xl animate-pulse" />
+                            <div className="flex-1 space-y-2 py-1">
+                              <div className="h-3 bg-slate-100 rounded w-1/6 animate-pulse" />
+                              <div className="h-4 bg-slate-100 rounded w-1/2 animate-pulse" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 animate-pulse">
+                  <div className="flex justify-between items-center mb-6">
+                    <div className="h-6 bg-slate-200 rounded w-1/3" />
+                  </div>
+                  <div className="h-[280px] bg-slate-100 rounded-2xl" />
+                </div>
+              )}
+            </motion.div>
+          )}
 
-          {activeTab === 'calendar' ? (
+          {(!isLoading || records.length > 0) && activeTab === 'calendar' && (
             <motion.div
               key="calendar-view"
               initial={{ opacity: 0, x: 20 }}
@@ -697,7 +804,9 @@ export default function App() {
                 </div>
               </div>
             </motion.div>
-          ) : activeTab === 'record' ? (
+          )}
+
+          {(!isLoading || records.length > 0) && activeTab === 'record' && (
             <motion.div
               key="record-view"
               initial={{ opacity: 0, y: 20 }}
@@ -935,7 +1044,9 @@ export default function App() {
                 {recordType === 'prescription' && !imageUrl && ' (사진 필수)'}
               </button>
             </motion.div>
-          ) : (
+          )}
+
+          {(!isLoading || records.length > 0) && activeTab === 'history' && (
             <motion.div
               key="history-view"
               initial={{ opacity: 0, x: 20 }}
