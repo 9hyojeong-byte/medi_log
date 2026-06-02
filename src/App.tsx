@@ -68,7 +68,7 @@ export default function App() {
   };
 
   const [records, setRecords] = useState<MedicationRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'record' | 'history' | 'calendar'>('record');
   const [recordType, setRecordType] = useState<'status' | 'prescription'>('status');
   
@@ -105,10 +105,8 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (activeTab === 'history' || activeTab === 'calendar') {
-      fetchRecords();
-    }
-  }, [activeTab]);
+    fetchRecords();
+  }, []);
 
   const handleSave = async () => {
     if (!GAS_URL) {
