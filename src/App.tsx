@@ -29,19 +29,85 @@ import {
 } from 'lucide-react';
 import { MedicationRecord } from './types.ts';
 
+// Helper to compress and downscale uploaded image to avoid QuotaExceededError and keep Google Sheets sync hyper-fast.
+const resizeImage = (dataUrl: string, maxWidth = 800, maxHeight = 800): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = dataUrl;
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        // Compress to JPEG with 0.7 quality (which keeps it extremely crisp but under 80KB)
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      } else {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => {
+      resolve(dataUrl);
+    };
+  });
+};
+
 export default function App() {
+  const generateId = () => {
+    if (typeof window !== 'undefined' && window.crypto && typeof window.crypto.randomUUID === 'function') {
+      try {
+        return window.crypto.randomUUID();
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 11);
+  };
   // Helper: Get current time in Seoul (KST) for datetime-local input (YYYY-MM-DDTHH:mm)
   const getSeoulNow = (dateInput?: string) => {
-    const d = dateInput ? new Date(dateInput) : new Date();
-    return new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Seoul',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).format(d).replace(' ', 'T');
+    let d = new Date();
+    if (dateInput) {
+      const parsed = new Date(dateInput);
+      if (!isNaN(parsed.getTime())) {
+        d = parsed;
+      }
+    }
+    try {
+      return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }).format(d).replace(' ', 'T');
+    } catch (err) {
+      console.error('Failed to format Seoul time:', err);
+      // Clean pure Javascript fallback for standard date formatting
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
   };
 
   const GAS_URL = "https://script.google.com/macros/s/AKfycbxR5Wc7rJU_SStXj_Nyo3ocplNO8UVJ7VE5oy7YJjstpRU5VgTWhlkhLsBS77BK018M/exec";
@@ -70,7 +136,31 @@ export default function App() {
   const [records, setRecords] = useState<MedicationRecord[]>(() => {
     try {
       const saved = localStorage.getItem('medication_records');
-      return saved ? JSON.parse(saved) : [];
+      const parsed = saved ? JSON.parse(saved) : [];
+      const seenIds = new Set<string>();
+      return (Array.isArray(parsed) ? parsed : [])
+        .filter(rec => 
+          rec && 
+          typeof rec === 'object' && 
+          typeof rec.id === 'string' && 
+          rec.id.trim() !== '' && 
+          typeof rec.timestamp === 'string' && 
+          rec.timestamp.trim() !== ''
+        )
+        .map(rec => ({
+          id: String(rec.id).trim(),
+          type: (rec.type === 'prescription' || rec.type === 'status') ? rec.type : 'status',
+          isMedicated: rec.isMedicated === true || rec.isMedicated === 'true' || rec.isMedicated === 1 || String(rec.isMedicated).toUpperCase() === 'TRUE',
+          hasSymptoms: rec.hasSymptoms === true || rec.hasSymptoms === 'true' || rec.hasSymptoms === 1 || String(rec.hasSymptoms).toUpperCase() === 'TRUE',
+          memo: typeof rec.memo === 'string' ? rec.memo : (rec.memo ? String(rec.memo) : ''),
+          imageUrl: typeof rec.imageUrl === 'string' && rec.imageUrl.trim() !== '' ? rec.imageUrl.trim() : undefined,
+          timestamp: String(rec.timestamp).trim()
+        }))
+        .filter(rec => {
+          if (seenIds.has(rec.id)) return false;
+          seenIds.add(rec.id);
+          return true;
+        });
     } catch (e) {
       console.error('Failed to parse cached records:', e);
       return [];
@@ -98,6 +188,42 @@ export default function App() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // Toast State
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+  };
+  
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmModal(null);
+      }
+    });
+  };
+
   // Fetch Records from GAS
   const fetchRecords = async (isBackground = false) => {
     if (!GAS_URL) {
@@ -116,12 +242,42 @@ export default function App() {
       const response = await fetch(GAS_URL);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      const freshData = Array.isArray(data) ? data : [];
+      const rawData = Array.isArray(data) ? data : [];
+      
+      // Parse, cast, normalize, and uniquely filter valid records returned from Google Sheets
+      const seenIds = new Set<string>();
+      const freshData = rawData
+        .filter(rec => 
+          rec && 
+          typeof rec === 'object' && 
+          typeof rec.id === 'string' && 
+          rec.id.trim() !== '' && 
+          typeof rec.timestamp === 'string' && 
+          rec.timestamp.trim() !== ''
+        )
+        .map(rec => ({
+          id: String(rec.id).trim(),
+          type: (rec.type === 'prescription' || rec.type === 'status') ? rec.type : 'status',
+          isMedicated: rec.isMedicated === true || rec.isMedicated === 'true' || rec.isMedicated === 1 || String(rec.isMedicated).toUpperCase() === 'TRUE',
+          hasSymptoms: rec.hasSymptoms === true || rec.hasSymptoms === 'true' || rec.hasSymptoms === 1 || String(rec.hasSymptoms).toUpperCase() === 'TRUE',
+          memo: typeof rec.memo === 'string' ? rec.memo : (rec.memo ? String(rec.memo) : ''),
+          imageUrl: typeof rec.imageUrl === 'string' && rec.imageUrl.trim() !== '' ? rec.imageUrl.trim() : undefined,
+          timestamp: String(rec.timestamp).trim()
+        }))
+        .filter(rec => {
+          if (seenIds.has(rec.id)) return false;
+          seenIds.add(rec.id);
+          return true;
+        });
       
       setRecords(prev => {
         const hasChanged = JSON.stringify(prev) !== JSON.stringify(freshData);
         if (hasChanged) {
-          localStorage.setItem('medication_records', JSON.stringify(freshData));
+          try {
+            localStorage.setItem('medication_records', JSON.stringify(freshData));
+          } catch (e) {
+            console.warn('Failed to cache fetched records in localStorage:', e);
+          }
           return freshData;
         }
         return prev;
@@ -129,7 +285,7 @@ export default function App() {
     } catch (error) {
       console.error('GAS Fetch Error:', error);
       if (!isBackground) {
-        alert('데이터를 불러오는데 실패했습니다.\n1. GAS 배포 시 "모든 사용자(Anyone)" 권한을 주었는지 확인하세요.\n2. 브라우저에서 GAS URL을 직접 열었을 때 데이터가 보이는지 확인하세요.');
+        showToast('데이터를 불러오는데 실패했습니다. 구글 시트 연결이나 설정을 확인해 주세요.', 'error');
       }
     } finally {
       setIsLoading(false);
@@ -144,17 +300,29 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('medication_records', JSON.stringify(records));
+    try {
+      localStorage.setItem('medication_records', JSON.stringify(records));
+    } catch (e) {
+      console.warn('Failed to save records to localStorage (likely quota exceeded):', e);
+    }
   }, [records]);
 
   const handleSave = async () => {
     if (!GAS_URL) {
-      alert('GAS URL이 설정되지 않았습니다.');
+      showToast('GAS URL이 설정되지 않았습니다.', 'error');
       return;
     }
 
-    const finalTimestamp = new Date(customTimestamp + ':00+09:00').toISOString();
-    const id = editingId || crypto.randomUUID();
+    let finalTimestamp = new Date().toISOString();
+    try {
+      const parsedDate = new Date(customTimestamp + ':00+09:00');
+      if (!isNaN(parsedDate.getTime())) {
+        finalTimestamp = parsedDate.toISOString();
+      }
+    } catch (err) {
+      console.error('Failed to parse custom timestamp in handleSave:', err);
+    }
+    const id = editingId || generateId();
     
     const newRecord: MedicationRecord = {
       id,
@@ -195,9 +363,10 @@ export default function App() {
       setHasSymptoms(false);
       setCustomTimestamp(getSeoulNow());
       setActiveTab('history');
+      showToast(editingId ? '기록이 수정되었습니다.' : '기록이 등록되었습니다.', 'success');
     } catch (error) {
       console.error('Failed to save record:', error);
-      alert('기록 저장 중 오류가 발생했습니다.');
+      showToast('기록 저장 중 오류가 발생했습니다. 다시 시도해 주세요.', 'error');
       fetchRecords(); // Rollback to server state
     } finally {
       setIsLoading(false);
@@ -215,33 +384,38 @@ export default function App() {
     setActiveTab('record');
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (!GAS_URL) return;
-    if (!confirm('정말로 이 기록을 삭제할까요?')) return;
+    showConfirm(
+      '기록 삭제',
+      '정말로 이 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.',
+      async () => {
+        setIsLoading(true);
+        try {
+          // Optimistic update
+          setRecords(prev => prev.filter(rec => rec.id !== id));
 
-    setIsLoading(true);
-    try {
-      // Optimistic update
-      setRecords(prev => prev.filter(rec => rec.id !== id));
-
-      await fetch(GAS_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'text/plain',
-        },
-        body: JSON.stringify({ 
-          action: 'delete', 
-          id 
-        }),
-      });
-    } catch (error) {
-      console.error('Failed to delete record:', error);
-      alert('삭제 중 오류가 발생했습니다.');
-      fetchRecords(); // Rollback
-    } finally {
-      setIsLoading(false);
-    }
+          await fetch(GAS_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: {
+              'Content-Type': 'text/plain',
+            },
+            body: JSON.stringify({ 
+              action: 'delete', 
+              id 
+            }),
+          });
+          showToast('기록이 삭제되었습니다.', 'info');
+        } catch (error) {
+          console.error('Failed to delete record:', error);
+          showToast('삭제 중 오류가 발생했습니다. 다시 시도해 주세요.', 'error');
+          fetchRecords(); // Rollback
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    );
   };
 
   const [showExportOptions, setShowExportOptions] = useState(false);
@@ -258,55 +432,59 @@ export default function App() {
           // Add IDs to records that don't have them
           const processedRecords = json.map(rec => ({
             ...rec,
-            id: rec.id || crypto.randomUUID(),
+            id: rec.id || generateId(),
             timestamp: rec.timestamp || new Date().toISOString()
           }));
 
           const validRecords = processedRecords.filter(rec => rec.timestamp);
           
           if (validRecords.length === 0) {
-            alert('유효한 데이터가 없습니다.');
+            showToast('유효한 데이터가 없습니다.', 'error');
             return;
           }
 
-          if (confirm(`${validRecords.length}개의 기록을 가져오시겠습니까?`)) {
-            setIsLoading(true);
-            try {
-              // 1. UI에 즉시 반영 (낙관적 업데이트)
-              setRecords(prev => {
-                const existingIds = new Set(prev.map(r => r.id));
-                const uniqueNewRecords = validRecords.filter(r => !existingIds.has(r.id));
-                return [...uniqueNewRecords, ...prev]; // 새 기록을 위로
-              });
-
-              // 2. 구글 시트로 동기화 전송
-              if (GAS_URL) {
-                await fetch(GAS_URL, {
-                  method: 'POST',
-                  mode: 'no-cors',
-                  headers: { 'Content-Type': 'text/plain' },
-                  body: JSON.stringify({ 
-                    action: 'bulk_save', 
-                    records: validRecords 
-                  }),
+          showConfirm(
+            '데이터 가져오기',
+            `${validRecords.length}개의 기록을 가져오시겠습니까? 기존 데이터에 추가됩니다.`,
+            async () => {
+              setIsLoading(true);
+              try {
+                // 1. UI에 즉시 반영 (낙관적 업데이트)
+                setRecords(prev => {
+                  const existingIds = new Set(prev.map(r => r.id));
+                  const uniqueNewRecords = validRecords.filter(r => !existingIds.has(r.id));
+                  return [...uniqueNewRecords, ...prev]; // 새 기록을 위로
                 });
+
+                // 2. 구글 시트로 동기화 전송
+                if (GAS_URL) {
+                  await fetch(GAS_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ 
+                      action: 'bulk_save', 
+                      records: validRecords 
+                    }),
+                  });
+                  
+                  // 전송 후 서버 상태와 최종 동기화
+                  setTimeout(() => fetchRecords(), 1000); 
+                }
                 
-                // 전송 후 서버 상태와 최종 동기화
-                setTimeout(() => fetchRecords(), 1000); 
+                showToast('데이터를 성공적으로 가져왔습니다.', 'success');
+              } catch (err) {
+                console.error('Import sync error:', err);
+                showToast('데이터 동기화 중 오류가 발생했습니다. (시트 연결 확인 필요)', 'error');
+                fetchRecords(); // 오류 시 서버 데이터로 롤백
+              } finally {
+                setIsLoading(false);
               }
-              
-              alert('데이터를 성공적으로 가져왔습니다.');
-            } catch (err) {
-              console.error('Import sync error:', err);
-              alert('데이터 동기화 중 오류가 발생했습니다. (시트 연결 확인 필요)');
-              fetchRecords(); // 오류 시 서버 데이터로 롤백
-            } finally {
-              setIsLoading(false);
             }
-          }
+          );
         }
       } catch (err) {
-        alert('파일을 읽는 중 오류가 발생했습니다. 올바른 JSON 파일인지 확인해주세요.');
+        showToast('파일을 읽는 중 오류가 발생했습니다. 올바른 JSON 파일인지 확인해주세요.', 'error');
       }
     };
     reader.readAsText(file);
@@ -383,8 +561,14 @@ export default function App() {
 
   const groupedRecords = useMemo(() => {
     const groups: Record<string, MedicationRecord[]> = {};
-    // Sort all records by timestamp (ascending for internal day consistency)
-    const sorted = [...records].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    // Sort all records safely by timestamp (ascending for internal day consistency)
+    const sorted = [...records].sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      const valA = isNaN(timeA) ? 0 : timeA;
+      const valB = isNaN(timeB) ? 0 : timeB;
+      return valA - valB;
+    });
     
     sorted.forEach(record => {
       const { date } = formatDate(record.timestamp);
@@ -728,7 +912,13 @@ export default function App() {
                           {records.filter(r => getKSTDateStr(r.timestamp) === selectedDate).length > 0 ? (
                             records
                               .filter(r => getKSTDateStr(r.timestamp) === selectedDate)
-                              .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+                              .sort((a, b) => {
+                                const timeA = new Date(a.timestamp).getTime();
+                                const timeB = new Date(b.timestamp).getTime();
+                                const valA = isNaN(timeA) ? 0 : timeA;
+                                const valB = isNaN(timeB) ? 0 : timeB;
+                                return valA - valB;
+                              })
                               .map(record => (
                                 <div key={record.id} className="p-3 bg-slate-50 rounded-2xl flex flex-col gap-3 group">
                                   <div className="flex items-center justify-between">
@@ -759,12 +949,7 @@ export default function App() {
                                       </div>
                                       <div className="min-w-0">
                                         <p className="text-xs text-slate-400 font-mono">
-                                          {new Date(record.timestamp).toLocaleTimeString('ko-KR', { 
-                                            hour: '2-digit', 
-                                            minute: '2-digit', 
-                                            hour12: false,
-                                            timeZone: 'Asia/Seoul'
-                                          })}
+                                          {formatDate(record.timestamp).time}
                                           {record.type === 'prescription' && <span className="ml-2 text-[10px] text-blue-500 font-bold uppercase tracking-widest">처방기록</span>}
                                         </p>
                                         {record.memo ? (
@@ -965,8 +1150,14 @@ export default function App() {
                         const file = e.target.files?.[0];
                         if (file) {
                           const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setImageUrl(reader.result as string);
+                          reader.onloadend = async () => {
+                            const rawUrl = reader.result as string;
+                            try {
+                              const compressedUrl = await resizeImage(rawUrl);
+                              setImageUrl(compressedUrl);
+                            } catch (err) {
+                              setImageUrl(rawUrl);
+                            }
                           };
                           reader.readAsDataURL(file);
                         }
@@ -1180,6 +1371,75 @@ export default function App() {
       <footer className="mt-auto py-8 text-slate-300 text-[10px] uppercase tracking-widest font-bold">
         &copy; 2026 MediTracker UI • AI Guided Design
       </footer>
+
+      {/* Custom Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl border font-medium text-sm w-max max-w-[90vw] ${
+              toast.type === 'success'
+                ? 'bg-emerald-50 border-emerald-100 text-emerald-800'
+                : toast.type === 'error'
+                ? 'bg-rose-50 border-rose-100 text-rose-800'
+                : 'bg-slate-800 border-slate-700 text-slate-100'
+            }`}
+          >
+            {toast.type === 'success' && <CheckCircle className="text-emerald-500 w-5 h-5 flex-shrink-0" />}
+            {toast.type === 'error' && <AlertCircle className="text-rose-500 w-5 h-5 flex-shrink-0" />}
+            {toast.type === 'info' && <Clock className="text-slate-300 w-5 h-5 flex-shrink-0" />}
+            <span>{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Confirmation Modal */}
+      <AnimatePresence>
+        {confirmModal && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmModal(null)}
+              className="absolute inset-0 bg-slate-900"
+            />
+            
+            {/* Modal Body */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-100 z-10 flex flex-col gap-4"
+            >
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <AlertCircle className="text-emerald-500 w-5 h-5" />
+                {confirmModal.title}
+              </h3>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                {confirmModal.message}
+              </p>
+              <div className="flex gap-3 mt-2">
+                <button
+                  onClick={() => setConfirmModal(null)}
+                  className="flex-1 py-3 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-500 hover:bg-slate-50 transition-colors"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={confirmModal.onConfirm}
+                  className="flex-1 py-3 px-4 rounded-xl bg-slate-800 text-sm font-bold text-white hover:bg-slate-900 transition-colors"
+                >
+                  확인
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
