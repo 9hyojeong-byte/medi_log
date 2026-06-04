@@ -25,7 +25,8 @@ import {
   X,
   Camera,
   Image as ImageIcon,
-  FileText
+  FileText,
+  Menu
 } from 'lucide-react';
 import { MedicationRecord } from './types.ts';
 
@@ -66,6 +67,29 @@ const resizeImage = (dataUrl: string, maxWidth = 800, maxHeight = 800): Promise<
       resolve(dataUrl);
     };
   });
+};
+
+const hasActualSymptomVal = (val: boolean | string | undefined): boolean => {
+  if (!val || val === 'false' || val === '증상 없음') {
+    return false;
+  }
+  return true;
+};
+
+const getActiveSymptoms = (val: boolean | string | undefined): string[] => {
+  if (val === true || val === 'true') {
+    return ['웅웅']; // Default legacy mapping
+  }
+  if (!val || val === 'false' || val === '증상 없음') {
+    return ['증상 없음'];
+  }
+  return String(val)
+    .split(',')
+    .map(s => {
+      const trimmed = s.trim();
+      return trimmed === '삐' ? '삐-' : trimmed;
+    })
+    .filter(Boolean);
 };
 
 export default function App() {
@@ -110,7 +134,7 @@ export default function App() {
     }
   };
 
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbxR5Wc7rJU_SStXj_Nyo3ocplNO8UVJ7VE5oy7YJjstpRU5VgTWhlkhLsBS77BK018M/exec";
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbxnO0KROovGYd7gEzRMv9yzi46zJqHJNwmqeV6jhBeCFIk4A-M_kSCAMV6zCzGDUBcl/exec";
 
   const getKSTDateStr = (isoString: string) => {
     if (!isoString) return '';
@@ -151,7 +175,9 @@ export default function App() {
           id: String(rec.id).trim(),
           type: (rec.type === 'prescription' || rec.type === 'status') ? rec.type : 'status',
           isMedicated: rec.isMedicated === true || rec.isMedicated === 'true' || rec.isMedicated === 1 || String(rec.isMedicated).toUpperCase() === 'TRUE',
-          hasSymptoms: rec.hasSymptoms === true || rec.hasSymptoms === 'true' || rec.hasSymptoms === 1 || String(rec.hasSymptoms).toUpperCase() === 'TRUE',
+          hasSymptoms: typeof rec.hasSymptoms === 'string' && rec.hasSymptoms !== 'true' && rec.hasSymptoms !== 'false'
+            ? rec.hasSymptoms
+            : (rec.hasSymptoms === true || rec.hasSymptoms === 'true' || rec.hasSymptoms === 1 || String(rec.hasSymptoms).toUpperCase() === 'TRUE'),
           memo: typeof rec.memo === 'string' ? rec.memo : (rec.memo ? String(rec.memo) : ''),
           imageUrl: typeof rec.imageUrl === 'string' && rec.imageUrl.trim() !== '' ? rec.imageUrl.trim() : undefined,
           timestamp: String(rec.timestamp).trim()
@@ -174,16 +200,39 @@ export default function App() {
       return true;
     }
   });
+  const [loadingMessage, setLoadingMessage] = useState('처리 중...');
   const [isBackgroundFetching, setIsBackgroundFetching] = useState(false);
-  const [activeTab, setActiveTab] = useState<'record' | 'history' | 'calendar'>('record');
+  const [activeTab, setActiveTab] = useState<'record' | 'history' | 'calendar' | 'symptoms'>('record');
   const [recordType, setRecordType] = useState<'status' | 'prescription'>('status');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // Calendar State
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isMedicated, setIsMedicated] = useState(false);
-  const [hasSymptoms, setHasSymptoms] = useState(false);
+  const [hasSymptoms, setHasSymptoms] = useState<boolean | string>('증상 없음');
   const [customTimestamp, setCustomTimestamp] = useState(getSeoulNow()); 
+
+  const handleSymptomToggle = (option: string) => {
+    if (option === '증상 없음') {
+      setHasSymptoms('증상 없음');
+      return;
+    }
+    
+    const active = getActiveSymptoms(hasSymptoms).filter(s => s !== '증상 없음');
+    let next: string[];
+    if (active.includes(option)) {
+      next = active.filter(s => s !== option);
+    } else {
+      next = [...active, option];
+    }
+    
+    if (next.length === 0) {
+      setHasSymptoms('증상 없음');
+    } else {
+      setHasSymptoms(next.join(', '));
+    }
+  }; 
   const [memo, setMemo] = useState('');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -211,6 +260,9 @@ export default function App() {
     message: string;
     onConfirm: () => void;
   } | null>(null);
+
+  // Memo Modal State
+  const [memoModal, setMemoModal] = useState<{ title: string; memo: string; timestamp: string } | null>(null);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setConfirmModal({
@@ -259,7 +311,9 @@ export default function App() {
           id: String(rec.id).trim(),
           type: (rec.type === 'prescription' || rec.type === 'status') ? rec.type : 'status',
           isMedicated: rec.isMedicated === true || rec.isMedicated === 'true' || rec.isMedicated === 1 || String(rec.isMedicated).toUpperCase() === 'TRUE',
-          hasSymptoms: rec.hasSymptoms === true || rec.hasSymptoms === 'true' || rec.hasSymptoms === 1 || String(rec.hasSymptoms).toUpperCase() === 'TRUE',
+          hasSymptoms: typeof rec.hasSymptoms === 'string' && rec.hasSymptoms !== 'true' && rec.hasSymptoms !== 'false'
+            ? rec.hasSymptoms
+            : (rec.hasSymptoms === true || rec.hasSymptoms === 'true' || rec.hasSymptoms === 1 || String(rec.hasSymptoms).toUpperCase() === 'TRUE'),
           memo: typeof rec.memo === 'string' ? rec.memo : (rec.memo ? String(rec.memo) : ''),
           imageUrl: typeof rec.imageUrl === 'string' && rec.imageUrl.trim() !== '' ? rec.imageUrl.trim() : undefined,
           timestamp: String(rec.timestamp).trim()
@@ -334,6 +388,7 @@ export default function App() {
       timestamp: finalTimestamp,
     };
 
+    setLoadingMessage('데이터 업로드 중...');
     setIsLoading(true);
     try {
       // Optimistic update
@@ -360,10 +415,10 @@ export default function App() {
       setMemo('');
       setImageUrl(null);
       setIsMedicated(false);
-      setHasSymptoms(false);
+      setHasSymptoms('증상 없음');
       setCustomTimestamp(getSeoulNow());
-      setActiveTab('history');
-      showToast(editingId ? '기록이 수정되었습니다.' : '기록이 등록되었습니다.', 'success');
+      // 기록 저장 완료 후 다른 탭으로 이동하지 않고 현재 작성 화면(디폴트 상태)에 머무름
+      showToast('데이터가 저장되었습니다.', 'success');
     } catch (error) {
       console.error('Failed to save record:', error);
       showToast('기록 저장 중 오류가 발생했습니다. 다시 시도해 주세요.', 'error');
@@ -377,7 +432,7 @@ export default function App() {
     setEditingId(record.id);
     setRecordType(record.type || 'status');
     setIsMedicated(record.isMedicated);
-    setHasSymptoms(record.hasSymptoms || false);
+    setHasSymptoms(record.hasSymptoms || '증상 없음');
     setMemo(record.memo);
     setImageUrl(record.imageUrl || null);
     setCustomTimestamp(getSeoulNow(record.timestamp));
@@ -390,6 +445,7 @@ export default function App() {
       '기록 삭제',
       '정말로 이 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.',
       async () => {
+        setLoadingMessage('데이터 삭제 중...');
         setIsLoading(true);
         try {
           // Optimistic update
@@ -433,6 +489,12 @@ export default function App() {
           const processedRecords = json.map(rec => ({
             ...rec,
             id: rec.id || generateId(),
+            type: (rec.type === 'prescription' || rec.type === 'status') ? rec.type : 'status',
+            isMedicated: rec.isMedicated === true || rec.isMedicated === 'true' || rec.isMedicated === 1 || String(rec.isMedicated).toUpperCase() === 'TRUE',
+            hasSymptoms: typeof rec.hasSymptoms === 'string' && rec.hasSymptoms !== 'true' && rec.hasSymptoms !== 'false'
+              ? rec.hasSymptoms
+              : (rec.hasSymptoms === true || rec.hasSymptoms === 'true' || rec.hasSymptoms === 1 || String(rec.hasSymptoms).toUpperCase() === 'TRUE'),
+            memo: typeof rec.memo === 'string' ? rec.memo : (rec.memo ? String(rec.memo) : ''),
             timestamp: rec.timestamp || new Date().toISOString()
           }));
 
@@ -447,6 +509,7 @@ export default function App() {
             '데이터 가져오기',
             `${validRecords.length}개의 기록을 가져오시겠습니까? 기존 데이터에 추가됩니다.`,
             async () => {
+              setLoadingMessage('데이터 가져오는 중...');
               setIsLoading(true);
               try {
                 // 1. UI에 즉시 반영 (낙관적 업데이트)
@@ -509,8 +572,12 @@ export default function App() {
         dateRecords.forEach((rec) => {
           const { time } = formatDate(rec.timestamp);
           textLines.push(time);
-          textLines.push(`투약여부 : ${rec.isMedicated ? 'O' : 'X'}`);
-          textLines.push(`증상유무 : ${rec.hasSymptoms ? 'O' : 'X'}`);
+          if (rec.type === 'prescription') {
+            textLines.push(`종류 : 처방기록`);
+          } else {
+            textLines.push(`투약여부 : ${rec.isMedicated ? 'O' : 'X'}`);
+            textLines.push(`증상 : ${hasActualSymptomVal(rec.hasSymptoms) ? rec.hasSymptoms : '증상 없음'}`);
+          }
           textLines.push(`메모 : ${rec.memo || ''}`);
           textLines.push(''); // Empty line between records
         });
@@ -585,125 +652,138 @@ export default function App() {
   }, [records]);
 
   return (
-    <div id="app-container" className="min-h-screen bg-slate-50 flex flex-col items-center p-4 sm:p-8">
-      <header className="w-full max-w-2xl flex flex-col gap-6 mb-8">
-        <div className="flex items-center justify-between relative">
-          <h1 id="app-title" className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <PlusCircle className="text-emerald-500 w-8 h-8" />
-            쿠쿠증상기록
-          </h1>
-          <div className="relative">
-            <button 
-              id="download-btn"
-              onClick={() => setShowExportOptions(!showExportOptions)}
-              className={`p-2 rounded-full transition-all shadow-sm border ${
-                showExportOptions 
-                  ? 'bg-emerald-500 text-white border-emerald-500' 
-                  : 'bg-white text-slate-500 hover:text-emerald-600 border-slate-100 hover:bg-slate-50'
-              }`}
-              title="데이터 다운로드"
-            >
-              <Download size={20} />
-            </button>
-            
-            <AnimatePresence>
-              {showExportOptions && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-40" 
-                    onClick={() => setShowExportOptions(false)} 
-                  />
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 z-50 overflow-hidden py-2"
-                  >
-                    <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 mb-1">
-                      데이터 관리
-                    </div>
-                    <button
-                      onClick={() => handleDownload('json')}
-                      className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-slate-50 flex items-center justify-between text-slate-700"
-                    >
-                      데이터 내보내기 (JSON)
-                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-400">Export</span>
-                    </button>
-                    <button
-                      onClick={() => handleDownload('text')}
-                      className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-slate-50 flex items-center justify-between text-slate-700"
-                    >
-                      텍스트로 저장 (.txt)
-                      <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-600">Print</span>
-                    </button>
-                    <div className="h-[1px] bg-slate-50 my-1" />
-                    <label className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-slate-50 flex items-center justify-between text-slate-700 cursor-pointer">
-                      <span>데이터 가져오기 (JSON)</span>
-                      <span className="text-[10px] bg-blue-100 px-1.5 py-0.5 rounded text-blue-600">Import</span>
-                      <input 
-                        type="file" 
-                        accept=".json" 
-                        className="hidden" 
-                        onChange={handleImport}
-                      />
-                    </label>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
+    <div id="app-wrapper" className="min-h-screen bg-slate-50 flex flex-col lg:flex-row">
+      {/* Sidebar Menu */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-100 flex flex-col transition-transform duration-300 lg:translate-x-0 lg:static lg:h-screen lg:flex-shrink-0 ${
+        isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
+        {/* Sidebar Title */}
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <PlusCircle className="text-emerald-500 w-7 h-7" />
+            <span className="text-lg font-extrabold text-slate-850 tracking-tight">쿠쿠증상기록</span>
           </div>
+          <button 
+            onClick={() => setIsSidebarOpen(false)} 
+            className="p-1 hover:bg-slate-50 rounded-full lg:hidden text-slate-400"
+          >
+            <X size={20} />
+          </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div id="nav-tabs" className="bg-slate-200/50 p-1 rounded-xl flex gap-1">
+        {/* Sidebar Navigation */}
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
           <button
-            id="tab-record"
             onClick={() => {
               setActiveTab('record');
-              if (!editingId) {
-                setMemo('');
-                setIsMedicated(false);
-                setHasSymptoms(false);
-                setCustomTimestamp(getSeoulNow());
-              }
+              setEditingId(null);
+              setMemo('');
+              setImageUrl(null);
+              setIsMedicated(false);
+              setHasSymptoms('증상 없음');
+              setCustomTimestamp(getSeoulNow());
+              setIsSidebarOpen(false);
             }}
-            className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-all ${
-              activeTab === 'record' 
-                ? 'bg-white text-emerald-600 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700'
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+              activeTab === 'record'
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
             }`}
           >
             <PlusCircle size={18} />
-            기록
+            기록 작성 (홈)
           </button>
           <button
-            id="tab-history"
-            onClick={() => setActiveTab('history')}
-            className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-all ${
-              activeTab === 'history' 
-                ? 'bg-white text-emerald-600 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700'
+            onClick={() => {
+              setActiveTab('history');
+              setIsSidebarOpen(false);
+            }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+              activeTab === 'history'
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
             }`}
           >
             <History size={18} />
             기록목록
           </button>
           <button
-            id="tab-calendar"
-            onClick={() => setActiveTab('calendar')}
-            className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-all ${
-              activeTab === 'calendar' 
-                ? 'bg-white text-emerald-600 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700'
+            onClick={() => {
+              setActiveTab('calendar');
+              setIsSidebarOpen(false);
+            }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+              activeTab === 'calendar'
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
             }`}
           >
             <Calendar size={18} />
             달력보기
           </button>
-        </div>
-      </header>
+          <button
+            onClick={() => {
+              setActiveTab('symptoms');
+              setIsSidebarOpen(false);
+            }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+              activeTab === 'symptoms'
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+            }`}
+          >
+            <AlertCircle size={18} className={activeTab === 'symptoms' ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'} />
+            증상 히스토리
+          </button>
+        </nav>
 
-      <main className="w-full max-w-2xl relative">
+        {/* Sidebar Data Control Footer */}
+        <div className="p-4 border-t border-slate-100 flex flex-col gap-2 bg-slate-50/50">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 mb-1">데이터 동기화</div>
+          <button
+            onClick={() => handleDownload('json')}
+            className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all w-full text-left"
+          >
+            <Download size={14} className="text-slate-400" />
+            백업 내보내기 (JSON)
+          </button>
+          <label className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all w-full text-left cursor-pointer">
+            <Download size={14} className="text-slate-400 rotate-180" />
+            <span>데이터 가져오기 (JSON)</span>
+            <input type="file" accept=".json" className="hidden" onChange={handleImport} />
+          </label>
+        </div>
+      </aside>
+
+      {/* Mobile Drawer Backdrop */}
+      {isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[2px] lg:hidden"
+        />
+      )}
+
+      {/* Main Container */}
+      <div id="main-scroll-container" className="flex-1 flex flex-col items-center p-4 sm:p-8 lg:p-12 overflow-y-auto h-screen w-full">
+        <header className="w-full max-w-2xl flex flex-col gap-4 mb-8">
+          <div className="flex items-center justify-between relative">
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-2 -ml-2 rounded-xl hover:bg-slate-100 lg:hidden text-slate-600 transition-colors flex items-center justify-center"
+                title="메뉴 열기"
+              >
+                <Menu size={20} />
+              </button>
+              <h1 id="app-title" className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                <PlusCircle className="text-emerald-500 w-8 h-8" />
+                쿠쿠증상기록
+              </h1>
+            </div>
+          </div>
+        </header>
+
+        <main className="w-full max-w-2xl relative">
         <AnimatePresence mode="wait">
           {/* Background synchronization indicator (small badge, clean styling) */}
           {isBackgroundFetching && (
@@ -723,7 +803,7 @@ export default function App() {
             >
               <div className="flex flex-col items-center gap-2 bg-white/95 px-5 py-4 rounded-2xl shadow-xl shadow-slate-200 border border-slate-100">
                 <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest">처리 중...</p>
+                <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest">{loadingMessage}</p>
               </div>
             </motion.div>
           )}
@@ -845,7 +925,7 @@ export default function App() {
                         // Check if day has data for current mode matching KST date
                         const dayRecords = records.filter(r => getKSTDateStr(r.timestamp) === dateStr);
                         const hasMedication = dayRecords.some(r => r.isMedicated && r.type !== 'prescription');
-                        const hasSymptoms = dayRecords.some(r => r.hasSymptoms && r.type !== 'prescription');
+                        const hasSymptoms = dayRecords.some(r => hasActualSymptomVal(r.hasSymptoms) && r.type !== 'prescription');
                         const hasPrescription = dayRecords.some(r => r.type === 'prescription');
                         const hasAnyRecord = dayRecords.length > 0;
 
@@ -935,7 +1015,7 @@ export default function App() {
                                                 <PlusCircle size={14} className="text-emerald-500" />
                                               </div>
                                             )}
-                                            {record.hasSymptoms ? (
+                                            {hasActualSymptomVal(record.hasSymptoms) ? (
                                               <div className="p-1.5 bg-white rounded-lg shadow-sm border border-rose-100">
                                                 <AlertCircle size={14} className="text-rose-500" />
                                               </div>
@@ -952,13 +1032,24 @@ export default function App() {
                                           {formatDate(record.timestamp).time}
                                           {record.type === 'prescription' && <span className="ml-2 text-[10px] text-blue-500 font-bold uppercase tracking-widest">처방기록</span>}
                                         </p>
-                                        {record.memo ? (
-                                          <p className="text-sm text-slate-700 leading-snug mt-0.5">{record.memo}</p>
-                                        ) : (
-                                          <p className="text-xs text-slate-300 italic mt-0.5">
-                                            {record.type === 'prescription' ? '별도 메모 없음' : '증상 없음. 별도 기록 내용 없음'}
-                                          </p>
-                                        )}
+                                        <div className="mt-1 flex flex-col gap-1">
+                                          {record.type !== 'prescription' && (
+                                            <p className="text-xs font-semibold text-slate-500">
+                                              증상: {hasActualSymptomVal(record.hasSymptoms) ? (
+                                                <span className="text-rose-600 font-bold">{record.hasSymptoms}</span>
+                                              ) : (
+                                                <span className="text-sky-600">증상 없음</span>
+                                              )}
+                                            </p>
+                                          )}
+                                          {record.memo ? (
+                                            <p className="text-sm text-slate-700 leading-snug">{record.memo}</p>
+                                          ) : (
+                                            record.type === 'prescription' && (
+                                              <p className="text-xs text-slate-300 italic">별도 메모 없음</p>
+                                            )
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
@@ -998,13 +1089,44 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.2 }}
-              className="bg-white rounded-3xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col gap-6 mx-auto max-w-md"
+              className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col mx-auto max-w-md w-full overflow-hidden"
             >
-              <div className="flex items-center justify-between border-b border-slate-50 pb-4">
-                <h2 id="record-title" className="text-xl font-semibold text-slate-800">
-                  {editingId ? '기록 수정하기' : recordType === 'status' ? '상태 기록하기' : '처방 기록하기'}
-                </h2>
-                {editingId && (
+              {/* 상단 일체형 기록 유형 탭 헤더 */}
+              {!editingId ? (
+                <div role="tablist" className="flex border-b border-slate-100 bg-slate-50/50">
+                  <button
+                    role="tab"
+                    aria-selected={recordType === 'status'}
+                    onClick={() => setRecordType('status')}
+                    className={`flex-1 py-4 px-4 text-center font-bold text-sm transition-all flex items-center justify-center gap-2 border-b-2 ${
+                      recordType === 'status'
+                        ? 'border-emerald-500 text-emerald-600 bg-white'
+                        : 'border-transparent text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    <AlertCircle size={16} />
+                    상태기록
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={recordType === 'prescription'}
+                    onClick={() => setRecordType('prescription')}
+                    className={`flex-1 py-4 px-4 text-center font-bold text-sm transition-all flex items-center justify-center gap-2 border-b-2 ${
+                      recordType === 'prescription'
+                        ? 'border-blue-500 text-blue-600 bg-white'
+                        : 'border-transparent text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    <FileText size={16} />
+                    처방기록
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50/50">
+                  <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                    <Edit size={16} className="text-emerald-500" />
+                    기록 수정하기
+                  </h3>
                   <button 
                     id="cancel-edit"
                     onClick={() => {
@@ -1012,48 +1134,18 @@ export default function App() {
                       setMemo('');
                       setImageUrl(null);
                       setIsMedicated(false);
-                      setHasSymptoms(false);
+                      setHasSymptoms('증상 없음');
                       setCustomTimestamp(getSeoulNow());
                       setActiveTab('history');
                     }}
-                    className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
+                    className="p-1 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"
                   >
-                    <X size={20} />
-                  </button>
-                )}
-              </div>
-
-              {/* Record Type Toggle */}
-              {!editingId && (
-                <div role="tablist" className="flex bg-slate-100 p-1 rounded-xl">
-                  <button
-                    role="tab"
-                    aria-selected={recordType === 'status'}
-                    onClick={() => setRecordType('status')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-                      recordType === 'status' 
-                        ? 'bg-white text-emerald-600 shadow-sm' 
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    <AlertCircle size={16} />
-                    상태 기록
-                  </button>
-                  <button
-                    role="tab"
-                    aria-selected={recordType === 'prescription'}
-                    onClick={() => setRecordType('prescription')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-                      recordType === 'prescription' 
-                        ? 'bg-white text-blue-600 shadow-sm' 
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    <FileText size={16} />
-                    처방 기록
+                    <X size={18} />
                   </button>
                 </div>
               )}
+
+              <div className="p-6 flex flex-col gap-6">
 
               {/* Timestamp Field */}
               <div id="timestamp-field" className="flex flex-col gap-3">
@@ -1103,36 +1195,63 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Symptoms Toggle */}
+                  {/* Symptoms Multi-Select */}
                   <div id="symptoms-toggle" className="flex flex-col gap-3">
                     <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                      <History size={14} className="text-emerald-500" /> 증상 유무
+                      <History size={14} className="text-emerald-500" /> 증상 (복수선택 가능)
                     </label>
-                    <div className="flex gap-3">
-                      <button
-                        id="btn-symptoms-yes"
-                        onClick={() => setHasSymptoms(true)}
-                        className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
-                          hasSymptoms 
-                            ? 'border-rose-500 bg-rose-50 text-rose-700' 
-                            : 'border-slate-50 bg-slate-50/50 text-slate-400'
-                        }`}
-                      >
-                        <CheckCircle2 size={18} />
-                        증상 있음
-                      </button>
-                      <button
-                        id="btn-symptoms-no"
-                        onClick={() => setHasSymptoms(false)}
-                        className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
-                          !hasSymptoms 
-                            ? 'border-sky-500 bg-sky-50 text-sky-700' 
-                            : 'border-slate-50 bg-slate-50/50 text-slate-400'
-                        }`}
-                      >
-                        <CheckCircle size={18} />
-                        증상 없음
-                      </button>
+                    <div className="flex flex-col gap-3">
+                      {/* 첫번째 줄 : 증상없음 */}
+                      {(() => {
+                        const activeSymptoms = getActiveSymptoms(hasSymptoms);
+                        const isNoSymptom = activeSymptoms.includes('증상 없음');
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => handleSymptomToggle('증상 없음')}
+                            className={`w-full py-4 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
+                              isNoSymptom
+                                ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
+                                : 'border-slate-100 bg-slate-50/40 text-slate-400 hover:border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {isNoSymptom && <CheckCircle size={18} />}
+                            🙌 증상 없음
+                          </button>
+                        );
+                      })()}
+
+                      {/* 두번째 줄 : 압력감, 웅웅, 삐-, 어지러움 */}
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { name: '압력감', emoji: '💆' },
+                          { name: '웅웅', emoji: '🌀' },
+                          { name: '삐-', emoji: '⚡' },
+                          { name: '어지러움', emoji: '💫' }
+                        ].map((item) => {
+                          const activeSymptoms = getActiveSymptoms(hasSymptoms);
+                          const isSelected = activeSymptoms.includes(item.name);
+                          
+                          return (
+                            <button
+                              key={item.name}
+                              type="button"
+                              onClick={() => handleSymptomToggle(item.name)}
+                              className={`py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 border-2 transition-all font-bold text-sm ${
+                                isSelected
+                                  ? 'border-rose-500 bg-rose-50/70 text-rose-700 shadow-sm'
+                                  : 'border-slate-100 bg-slate-50/40 text-slate-400 hover:border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              {isSelected && <CheckCircle2 size={18} className="flex-shrink-0" />}
+                              <span className="flex items-center gap-1.5">
+                                <span>{item.emoji}</span>
+                                <span>{item.name}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </>
@@ -1234,8 +1353,9 @@ export default function App() {
                 {editingId ? '기록 업데이트' : '기록 저장하기'}
                 {recordType === 'prescription' && !imageUrl && ' (사진 필수)'}
               </button>
-            </motion.div>
-          )}
+            </div>
+          </motion.div>
+        )}
 
           {(!isLoading || records.length > 0) && activeTab === 'history' && (
             <motion.div
@@ -1316,11 +1436,31 @@ export default function App() {
                                   <td className="px-4 py-4 text-center">
                                     <div className="flex justify-center">
                                       {!isPrescription && (
-                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                                          (record.hasSymptoms ?? false) ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'
-                                        }`}>
-                                          {(record.hasSymptoms ?? false) ? 'O' : 'OK'}
-                                        </span>
+                                        <div className="flex flex-wrap gap-1 justify-center max-w-[120px]">
+                                          {(() => {
+                                            const sVal = record.hasSymptoms;
+                                            if (sVal === true || sVal === 'true') {
+                                              return (
+                                                <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-700">
+                                                  증상 있음
+                                                </span>
+                                              );
+                                            }
+                                            if (!sVal || sVal === false || sVal === 'false' || sVal === '증상 없음') {
+                                              return (
+                                                <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-sky-100 text-sky-700">
+                                                  증상 없음
+                                                </span>
+                                              );
+                                            }
+                                            const options = String(sVal).split(',').map(s => s.trim()).filter(Boolean);
+                                            return options.map((opt, i) => (
+                                              <span key={i} className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-700">
+                                                {opt}
+                                              </span>
+                                            ));
+                                          })()}
+                                        </div>
                                       )}
                                     </div>
                                   </td>
@@ -1365,12 +1505,235 @@ export default function App() {
               )}
             </motion.div>
           )}
+
+          {(!isLoading || records.length > 0) && activeTab === 'symptoms' && (
+            <motion.div
+              key="symptoms-view"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+              className="w-full flex flex-col gap-6"
+            >
+              {/* Quick Insight / Summary Box */}
+              {(() => {
+                const statusRecords = records.filter(r => r.type !== 'prescription');
+                const totalCount = statusRecords.length;
+                if (totalCount === 0) return null;
+
+                const counts: Record<string, number> = {
+                  '압력감': 0,
+                  '웅웅': 0,
+                  '삐-': 0,
+                  '어지러움': 0,
+                  '증상 없음': 0,
+                };
+
+                statusRecords.forEach(r => {
+                  const opts = getActiveSymptoms(r.hasSymptoms);
+                  opts.forEach(opt => {
+                    const norm = opt === '삐' ? '삐-' : opt;
+                    if (norm in counts) {
+                      counts[norm]++;
+                    }
+                  });
+                });
+
+                // Find top symptom (excluding "증상 없음")
+                let topSymptom = '없음';
+                let topCount = 0;
+                Object.entries(counts).forEach(([sym, cnt]) => {
+                  if (sym !== '증상 없음' && cnt > topCount) {
+                    topCount = cnt;
+                    topSymptom = sym;
+                  }
+                });
+
+                const noSymptomCount = counts['증상 없음'];
+                const noSymptomPercent = totalCount > 0 ? Math.round((noSymptomCount / totalCount) * 100) : 0;
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">총 상태 기록 횟수</span>
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className="text-2xl font-extrabold text-slate-800">{totalCount}</span>
+                        <span className="text-xs font-semibold text-slate-500">회</span>
+                      </div>
+                    </div>
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">증상 없음 비율</span>
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className="text-2xl font-extrabold text-sky-600">{noSymptomPercent}%</span>
+                        <span className="text-xs font-semibold text-slate-500">({noSymptomCount}회)</span>
+                      </div>
+                    </div>
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">가장 흔한 증상</span>
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className={`text-xl font-extrabold ${topCount > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                          {topCount > 0 ? topSymptom : '없음'}
+                        </span>
+                        {topCount > 0 && <span className="text-xs font-semibold text-slate-500">({topCount}회)</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Table List of Symptoms */}
+              {groupedRecords.filter(([_, dateRecords]) => dateRecords.some(r => r.type !== 'prescription')).length === 0 ? (
+                <div className="bg-white rounded-3xl p-12 text-center flex flex-col items-center gap-4 border border-slate-100 shadow-sm mx-auto w-full max-w-md">
+                  <div className="bg-slate-50 p-4 rounded-full">
+                    <History className="text-slate-300 w-12 h-12" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-800">아직 등록된 상태기록이 없어요</h3>
+                  <button 
+                    onClick={() => setActiveTab('record')}
+                    className="mt-4 text-emerald-600 font-bold hover:underline"
+                  >
+                    첫 상태기록 남기기
+                  </button>
+                </div>
+              ) : (
+                [...groupedRecords]
+                  .filter(([_, dateRecords]) => dateRecords.some(r => r.type !== 'prescription'))
+                  .sort((a, b) => a[0].localeCompare(b[0]))
+                  .map(([date, dateRecords]) => {
+                    const statusRecords = dateRecords.filter(r => r.type !== 'prescription');
+                    return (
+                      <div key={date} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden p-6 flex flex-col gap-4">
+                        {/* Day Title */}
+                        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                          <Calendar size={16} className="text-emerald-500" />
+                          <h3 className="font-extrabold text-slate-700 text-sm tracking-tight">{date}</h3>
+                          <span className="text-[10px] bg-slate-50 border border-slate-100 text-slate-400 font-bold px-2 py-0.5 rounded-full">
+                            기록 {statusRecords.length}개
+                          </span>
+                        </div>
+
+                        {/* Symptom Grid/Table */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse min-w-[500px]">
+                            <thead>
+                              <tr className="border-b border-slate-100">
+                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-left w-24">시간</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">증상 없음</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">압력감</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">웅웅</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">삐-</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">어지러움</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center w-16">메모</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {statusRecords.map((record) => {
+                                const activeSymptoms = getActiveSymptoms(record.hasSymptoms);
+                                const isNoSymptom = activeSymptoms.includes('증상 없음') || !hasActualSymptomVal(record.hasSymptoms);
+                                const hasPressure = activeSymptoms.includes('압력감');
+                                const hasBuzz = activeSymptoms.includes('웅웅');
+                                const hasBeep = activeSymptoms.includes('삐-') || activeSymptoms.includes('삐');
+                                const hasDizzy = activeSymptoms.includes('어지러움');
+                                const timeStr = formatDate(record.timestamp).time;
+
+                                return (
+                                  <tr key={record.id} className="border-b border-slate-50 hover:bg-slate-50/40 transition-colors">
+                                    <td className="py-3.5 px-2 text-xs font-bold text-slate-600 font-mono">{timeStr}</td>
+                                    
+                                    {/* 증상 없음 */}
+                                    <td className="py-3.5 px-2 text-center">
+                                      <div className="flex justify-center">
+                                        {isNoSymptom ? (
+                                          <div className="w-3.5 h-3.5 rounded-full bg-sky-500 shadow-sm border border-sky-300 ring-2 ring-sky-100 animate-pulse" title="증상 없음" />
+                                        ) : (
+                                          <span className="text-slate-200">-</span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* 압력감 */}
+                                    <td className="py-3.5 px-2 text-center">
+                                      <div className="flex justify-center">
+                                        {hasPressure ? (
+                                          <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="압력감 있음" />
+                                        ) : (
+                                          <span className="text-slate-200">-</span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* 웅웅 */}
+                                    <td className="py-3.5 px-2 text-center">
+                                      <div className="flex justify-center">
+                                        {hasBuzz ? (
+                                          <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="웅웅 울림 있음" />
+                                        ) : (
+                                          <span className="text-slate-200">-</span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* 삐- */}
+                                    <td className="py-3.5 px-2 text-center">
+                                      <div className="flex justify-center">
+                                        {hasBeep ? (
+                                          <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="삐- 소리 있음" />
+                                        ) : (
+                                          <span className="text-slate-200">-</span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* 어지러움 */}
+                                    <td className="py-3.5 px-2 text-center">
+                                      <div className="flex justify-center">
+                                        {hasDizzy ? (
+                                          <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="어지러움 있음" />
+                                        ) : (
+                                          <span className="text-slate-200">-</span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* 메모 */}
+                                    <td className="py-3.5 px-2 text-center">
+                                      <div className="flex justify-center">
+                                        {record.memo && record.memo.trim() ? (
+                                          <button
+                                            onClick={() => setMemoModal({
+                                              title: `${date} ${timeStr} 메모`,
+                                              memo: record.memo,
+                                              timestamp: record.timestamp
+                                            })}
+                                            className="p-1.5 rounded-lg bg-slate-50 border border-slate-100 hover:border-emerald-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/50 transition-all flex items-center justify-center shadow-sm"
+                                            title="메모 열기"
+                                          >
+                                            <FileText size={14} />
+                                          </button>
+                                        ) : (
+                                          <span className="text-slate-200">-</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </motion.div>
+          )}
         </AnimatePresence>
       </main>
 
       <footer className="mt-auto py-8 text-slate-300 text-[10px] uppercase tracking-widest font-bold">
         &copy; 2026 MediTracker UI • AI Guided Design
       </footer>
+      </div>
 
       {/* Custom Toast Notification */}
       <AnimatePresence>
@@ -1424,7 +1787,7 @@ export default function App() {
               </p>
               <div className="flex gap-3 mt-2">
                 <button
-                  onClick={() => setConfirmModal(null)}
+                   onClick={() => setConfirmModal(null)}
                   className="flex-1 py-3 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-500 hover:bg-slate-50 transition-colors"
                 >
                   취소
@@ -1434,6 +1797,54 @@ export default function App() {
                   className="flex-1 py-3 px-4 rounded-xl bg-slate-800 text-sm font-bold text-white hover:bg-slate-900 transition-colors"
                 >
                   확인
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Memo Modal */}
+      <AnimatePresence>
+        {memoModal && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMemoModal(null)}
+              className="absolute inset-0 bg-slate-900"
+            />
+            
+            {/* Modal Body */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-100 z-10 flex flex-col gap-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
+                  <FileText className="text-emerald-500 w-5 h-5" />
+                  {memoModal.title}
+                </h3>
+                <button
+                  onClick={() => setMemoModal(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <p className="text-sm text-slate-600 leading-relaxed bg-slate-50/70 p-4 rounded-xl border border-slate-100 max-h-[250px] overflow-y-auto whitespace-pre-wrap">
+                {memoModal.memo}
+              </p>
+              <div className="flex gap-3 justify-end mt-1">
+                <button
+                  onClick={() => setMemoModal(null)}
+                  className="py-2.5 px-6 rounded-xl bg-slate-800 text-xs font-bold text-white hover:bg-slate-900 transition-colors"
+                >
+                  닫기
                 </button>
               </div>
             </motion.div>

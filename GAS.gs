@@ -21,8 +21,6 @@ function getSheet() {
     // 헤더 검증 및 보정
     const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     if (JSON.stringify(currentHeaders) !== JSON.stringify(targetHeaders)) {
-      // 데이터가 있는 경우 컬럼 위치를 조정하기는 어려우므로 헤더만이라도 동기화 시도
-      // (기존 데이터가 5열인 경우 6, 7열을 추가하고 헤더를 맞춤)
       if (sheet.getLastColumn() < targetHeaders.length) {
         sheet.insertColumnsAfter(sheet.getLastColumn(), targetHeaders.length - sheet.getLastColumn());
       }
@@ -30,6 +28,23 @@ function getSheet() {
     }
   }
   return sheet;
+}
+
+// 헬퍼 함수: 입력값을 분석하여 투약 여부 boolean값 반환
+function parseIsMedicatedValue(val) {
+  return val === true || val === 'true' || val === 1 || String(val).toUpperCase() === 'TRUE';
+}
+
+// 헬퍼 함수: 입력값을 분석하여 증상 여부/목록 데이터 반환 (Boolean 또는 String)
+function parseHasSymptomsValue(val) {
+  if (val === true || val === 'true' || val === 1 || String(val).toUpperCase() === 'TRUE') {
+    return true;
+  }
+  if (val === false || val === 'false' || val === 0 || String(val).toUpperCase() === 'FALSE' || !val || String(val).trim() === '') {
+    return false;
+  }
+  // 그 외의 문자열(복수 증상 텍스트: 예: "압력감, 웅웅" 등)은 그대로 반환
+  return String(val);
 }
 
 function doGet(e) {
@@ -40,7 +55,6 @@ function doGet(e) {
   const headers = data.shift();
   const json = data.map(row => {
     const obj = {};
-    // 정해진 필드명과 인덱스로 매핑 (헤더 의존성 낮춤)
     const fieldMapping = {
       'id': 0,
       'type': 1,
@@ -54,8 +68,11 @@ function doGet(e) {
     Object.keys(fieldMapping).forEach(key => {
       const idx = fieldMapping[key];
       let val = row[idx] || '';
-      if (key === 'isMedicated' || key === 'hasSymptoms') {
-        val = (val === true || val === 'true' || val === 1 || String(val).toUpperCase() === 'TRUE');
+      if (key === 'isMedicated') {
+        val = parseIsMedicatedValue(val);
+      }
+      if (key === 'hasSymptoms') {
+        val = parseHasSymptomsValue(val);
       }
       if (key === 'timestamp' && val instanceof Date) {
         val = val.toISOString();
@@ -98,8 +115,8 @@ function doPost(e) {
         const rowData = [
           record.id, 
           record.type || 'status',
-          record.isMedicated === true || record.isMedicated === 'true' || String(record.isMedicated).toUpperCase() === 'TRUE', 
-          record.hasSymptoms === true || record.hasSymptoms === 'true' || String(record.hasSymptoms).toUpperCase() === 'TRUE', 
+          parseIsMedicatedValue(record.isMedicated), 
+          parseHasSymptomsValue(record.hasSymptoms), 
           String(record.memo || ''), 
           record.imageUrl || '',
           record.timestamp
@@ -141,8 +158,8 @@ function saveRecord(sheet, record) {
   const rowData = [
     record.id, 
     record.type || 'status',
-    record.isMedicated === true || record.isMedicated === 'true' || String(record.isMedicated).toUpperCase() === 'TRUE', 
-    record.hasSymptoms === true || record.hasSymptoms === 'true' || String(record.hasSymptoms).toUpperCase() === 'TRUE', 
+    parseIsMedicatedValue(record.isMedicated), 
+    parseHasSymptomsValue(record.hasSymptoms), 
     String(record.memo || ''), 
     record.imageUrl || '',
     record.timestamp
