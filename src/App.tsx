@@ -1225,9 +1225,9 @@ export default function App() {
                       <div className="grid grid-cols-2 gap-3">
                         {[
                           { name: '압력감', emoji: '💆' },
-                          { name: '웅웅', emoji: '🌀' },
+                          { name: '웅웅', emoji: '🔊' },
                           { name: '삐-', emoji: '⚡' },
-                          { name: '어지러움', emoji: '💫' }
+                          { name: '어지러움', emoji: '🥴' }
                         ].map((item) => {
                           const activeSymptoms = getActiveSymptoms(hasSymptoms);
                           const isSelected = activeSymptoms.includes(item.name);
@@ -1602,7 +1602,7 @@ export default function App() {
                   .map(([date, dateRecords]) => {
                     const statusRecords = dateRecords.filter(r => r.type !== 'prescription');
                     return (
-                      <div key={date} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden p-6 flex flex-col gap-4">
+                      <div key={date} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden p-4 sm:p-6 flex flex-col gap-4">
                         {/* Day Title */}
                         <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                           <Calendar size={16} className="text-emerald-500" />
@@ -1613,17 +1613,35 @@ export default function App() {
                         </div>
 
                         {/* Symptom Grid/Table */}
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse min-w-[500px]">
+                        <div className="overflow-x-visible">
+                          <table className="w-full text-left border-collapse table-fixed">
                             <thead>
                               <tr className="border-b border-slate-100">
-                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-left w-24">시간</th>
-                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">증상 없음</th>
-                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">압력감</th>
-                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">웅웅</th>
-                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">삐-</th>
-                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">어지러움</th>
-                                <th className="py-3 px-2 text-xs font-bold text-slate-400 uppercase tracking-wider text-center w-16">메모</th>
+                                <th className="py-3 px-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider text-left w-[50px] sm:w-[80px]">시간</th>
+                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                  <span className="block sm:hidden text-base cursor-help" title="증상 없음">🙌</span>
+                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">증상 없음</span>
+                                </th>
+                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                  <span className="block sm:hidden text-base cursor-help" title="압력감">💆</span>
+                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">압력감</span>
+                                </th>
+                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                  <span className="block sm:hidden text-base cursor-help" title="웅웅">🔊</span>
+                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">웅웅</span>
+                                </th>
+                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                  <span className="block sm:hidden text-base cursor-help" title="삐-">⚡</span>
+                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">삐-</span>
+                                </th>
+                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                  <span className="block sm:hidden text-base cursor-help" title="어지러움">🥴</span>
+                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">어지러움</span>
+                                </th>
+                                <th className="py-3 px-1 text-center w-[40px] sm:w-[65px]">
+                                  <span className="block sm:hidden text-base cursor-help" title="메모">📝</span>
+                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">메모</span>
+                                </th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1638,65 +1656,65 @@ export default function App() {
 
                                 return (
                                   <tr key={record.id} className="border-b border-slate-50 hover:bg-slate-50/40 transition-colors">
-                                    <td className="py-3.5 px-2 text-xs font-bold text-slate-600 font-mono">{timeStr}</td>
+                                    <td className="py-3 px-1 text-xs font-bold text-slate-600 font-mono tracking-tighter sm:tracking-normal">{timeStr}</td>
                                     
                                     {/* 증상 없음 */}
-                                    <td className="py-3.5 px-2 text-center">
+                                    <td className="py-3 px-0.5 text-center">
                                       <div className="flex justify-center">
                                         {isNoSymptom ? (
-                                          <div className="w-3.5 h-3.5 rounded-full bg-sky-500 shadow-sm border border-sky-300 ring-2 ring-sky-100 animate-pulse" title="증상 없음" />
+                                          <span className="text-emerald-600 font-black text-xs sm:text-xs tracking-tight bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" title="증상 없음">OK</span>
                                         ) : (
-                                          <span className="text-slate-200">-</span>
+                                          <span className="text-slate-200 text-xs">-</span>
                                         )}
                                       </div>
                                     </td>
 
                                     {/* 압력감 */}
-                                    <td className="py-3.5 px-2 text-center">
+                                    <td className="py-3 px-0.5 text-center">
                                       <div className="flex justify-center">
                                         {hasPressure ? (
-                                          <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="압력감 있음" />
+                                          <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="압력감 있음" />
                                         ) : (
-                                          <span className="text-slate-200">-</span>
+                                          <span className="text-slate-200 text-xs">-</span>
                                         )}
                                       </div>
                                     </td>
 
                                     {/* 웅웅 */}
-                                    <td className="py-3.5 px-2 text-center">
+                                    <td className="py-3 px-0.5 text-center">
                                       <div className="flex justify-center">
                                         {hasBuzz ? (
-                                          <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="웅웅 울림 있음" />
+                                          <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="웅웅 울림 있음" />
                                         ) : (
-                                          <span className="text-slate-200">-</span>
+                                          <span className="text-slate-200 text-xs">-</span>
                                         )}
                                       </div>
                                     </td>
 
                                     {/* 삐- */}
-                                    <td className="py-3.5 px-2 text-center">
+                                    <td className="py-3 px-0.5 text-center">
                                       <div className="flex justify-center">
                                         {hasBeep ? (
-                                          <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="삐- 소리 있음" />
+                                          <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="삐- 소리 있음" />
                                         ) : (
-                                          <span className="text-slate-200">-</span>
+                                          <span className="text-slate-200 text-xs">-</span>
                                         )}
                                       </div>
                                     </td>
 
                                     {/* 어지러움 */}
-                                    <td className="py-3.5 px-2 text-center">
+                                    <td className="py-3 px-0.5 text-center">
                                       <div className="flex justify-center">
                                         {hasDizzy ? (
-                                          <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="어지러움 있음" />
+                                          <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="어지러움 있음" />
                                         ) : (
-                                          <span className="text-slate-200">-</span>
+                                          <span className="text-slate-200 text-xs">-</span>
                                         )}
                                       </div>
                                     </td>
 
                                     {/* 메모 */}
-                                    <td className="py-3.5 px-2 text-center">
+                                    <td className="py-3 px-1 text-center">
                                       <div className="flex justify-center">
                                         {record.memo && record.memo.trim() ? (
                                           <button
@@ -1705,13 +1723,13 @@ export default function App() {
                                               memo: record.memo,
                                               timestamp: record.timestamp
                                             })}
-                                            className="p-1.5 rounded-lg bg-slate-50 border border-slate-100 hover:border-emerald-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/50 transition-all flex items-center justify-center shadow-sm"
+                                            className="p-1 sm:p-1.5 rounded-lg bg-slate-50 border border-slate-100 hover:border-emerald-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/50 transition-all flex items-center justify-center shadow-sm"
                                             title="메모 열기"
                                           >
-                                            <FileText size={14} />
+                                            <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
                                           </button>
                                         ) : (
-                                          <span className="text-slate-200">-</span>
+                                          <span className="text-slate-200 text-xs">-</span>
                                         )}
                                       </div>
                                     </td>
