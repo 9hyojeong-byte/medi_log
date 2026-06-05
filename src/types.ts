@@ -5,7 +5,7 @@
 
 export interface MedicationRecord {
   id: string;
-  type?: 'status' | 'prescription';
+  type?: 'status' | 'prescription' | 'daily_note';
   isMedicated: boolean;
   hasSymptoms: boolean | string;
   memo: string;

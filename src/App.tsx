@@ -173,7 +173,7 @@ export default function App() {
         )
         .map(rec => ({
           id: String(rec.id).trim(),
-          type: (rec.type === 'prescription' || rec.type === 'status') ? rec.type : 'status',
+          type: (rec.type === 'prescription' || rec.type === 'status' || rec.type === 'daily_note') ? rec.type : 'status',
           isMedicated: rec.isMedicated === true || rec.isMedicated === 'true' || rec.isMedicated === 1 || String(rec.isMedicated).toUpperCase() === 'TRUE',
           hasSymptoms: typeof rec.hasSymptoms === 'string' && rec.hasSymptoms !== 'true' && rec.hasSymptoms !== 'false'
             ? rec.hasSymptoms
@@ -264,6 +264,59 @@ export default function App() {
   // Memo Modal State
   const [memoModal, setMemoModal] = useState<{ title: string; memo: string; timestamp: string } | null>(null);
 
+  // Daily Note State (loaded from localStorage & saved on changes)
+  const [dailyNotes, setDailyNotes] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('daily_notes');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('daily_notes', JSON.stringify(dailyNotes));
+    } catch (e) {
+      console.warn('Failed to save daily notes to localStorage:', e);
+    }
+  }, [dailyNotes]);
+
+  // Sync daily notes from records whenever records change (allowing cloud db persistence to update client notes)
+  useEffect(() => {
+    setDailyNotes(prev => {
+      const updated = { ...prev };
+      let changed = false;
+      records.forEach(rec => {
+        if (rec.type === 'daily_note') {
+          const { date } = formatDate(rec.timestamp);
+          if (date && date !== '-' && date !== 'Invalid Date' && date !== 'Error') {
+            if (updated[date] !== rec.memo) {
+              updated[date] = rec.memo;
+              changed = true;
+            }
+          }
+        }
+      });
+      
+      // Clean up local notes whose corresponding daily_note records are absent in records
+      if (records.length > 0) {
+        Object.keys(updated).forEach(date => {
+          const recordId = `daily_note_${date}`;
+          const exists = records.some(r => r.id === recordId);
+          if (!exists) {
+            delete updated[date];
+            changed = true;
+          }
+        });
+      }
+      return changed ? updated : prev;
+    });
+  }, [records]);
+
+  // Daily Note Modal State
+  const [dailyNoteModal, setDailyNoteModal] = useState<{ date: string; content: string } | null>(null);
+
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setConfirmModal({
       isOpen: true,
@@ -309,7 +362,7 @@ export default function App() {
         )
         .map(rec => ({
           id: String(rec.id).trim(),
-          type: (rec.type === 'prescription' || rec.type === 'status') ? rec.type : 'status',
+          type: (rec.type === 'prescription' || rec.type === 'status' || rec.type === 'daily_note') ? rec.type : 'status',
           isMedicated: rec.isMedicated === true || rec.isMedicated === 'true' || rec.isMedicated === 1 || String(rec.isMedicated).toUpperCase() === 'TRUE',
           hasSymptoms: typeof rec.hasSymptoms === 'string' && rec.hasSymptoms !== 'true' && rec.hasSymptoms !== 'false'
             ? rec.hasSymptoms
@@ -489,7 +542,7 @@ export default function App() {
           const processedRecords = json.map(rec => ({
             ...rec,
             id: rec.id || generateId(),
-            type: (rec.type === 'prescription' || rec.type === 'status') ? rec.type : 'status',
+            type: (rec.type === 'prescription' || rec.type === 'status' || rec.type === 'daily_note') ? rec.type : 'status',
             isMedicated: rec.isMedicated === true || rec.isMedicated === 'true' || rec.isMedicated === 1 || String(rec.isMedicated).toUpperCase() === 'TRUE',
             hasSymptoms: typeof rec.hasSymptoms === 'string' && rec.hasSymptoms !== 'true' && rec.hasSymptoms !== 'false'
               ? rec.hasSymptoms
@@ -923,7 +976,7 @@ export default function App() {
                         const isSelected = selectedDate === dateStr;
                         
                         // Check if day has data for current mode matching KST date
-                        const dayRecords = records.filter(r => getKSTDateStr(r.timestamp) === dateStr);
+                        const dayRecords = records.filter(r => getKSTDateStr(r.timestamp) === dateStr && r.type !== 'daily_note');
                         const hasMedication = dayRecords.some(r => r.isMedicated && r.type !== 'prescription');
                         const hasSymptoms = dayRecords.some(r => hasActualSymptomVal(r.hasSymptoms) && r.type !== 'prescription');
                         const hasPrescription = dayRecords.some(r => r.type === 'prescription');
@@ -989,9 +1042,9 @@ export default function App() {
                         </div>
                         
                         <div className="space-y-3 max-h-60 overflow-y-auto pr-2 pb-2">
-                          {records.filter(r => getKSTDateStr(r.timestamp) === selectedDate).length > 0 ? (
+                          {records.filter(r => getKSTDateStr(r.timestamp) === selectedDate && r.type !== 'daily_note').length > 0 ? (
                             records
-                              .filter(r => getKSTDateStr(r.timestamp) === selectedDate)
+                              .filter(r => getKSTDateStr(r.timestamp) === selectedDate && r.type !== 'daily_note')
                               .sort((a, b) => {
                                 const timeA = new Date(a.timestamp).getTime();
                                 const timeB = new Date(b.timestamp).getTime();
@@ -1136,7 +1189,7 @@ export default function App() {
                       setIsMedicated(false);
                       setHasSymptoms('증상 없음');
                       setCustomTimestamp(getSeoulNow());
-                      setActiveTab('history');
+                      setActiveTab('symptoms');
                     }}
                     className="p-1 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"
                   >
@@ -1517,7 +1570,7 @@ export default function App() {
             >
               {/* Quick Insight / Summary Box */}
               {(() => {
-                const statusRecords = records.filter(r => r.type !== 'prescription');
+                const statusRecords = records.filter(r => r.type !== 'prescription' && r.type !== 'daily_note');
                 const totalCount = statusRecords.length;
                 if (totalCount === 0) return null;
 
@@ -1600,145 +1653,176 @@ export default function App() {
                   .filter(([_, dateRecords]) => dateRecords.some(r => r.type !== 'prescription'))
                   .sort((a, b) => a[0].localeCompare(b[0]))
                   .map(([date, dateRecords]) => {
-                    const statusRecords = dateRecords.filter(r => r.type !== 'prescription');
+                    const statusRecords = dateRecords.filter(r => r.type !== 'prescription' && r.type !== 'daily_note');
                     return (
                       <div key={date} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden p-4 sm:p-6 flex flex-col gap-4">
                         {/* Day Title */}
-                        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                          <Calendar size={16} className="text-emerald-500" />
-                          <h3 className="font-extrabold text-slate-700 text-sm tracking-tight">{date}</h3>
-                          <span className="text-[10px] bg-slate-50 border border-slate-100 text-slate-400 font-bold px-2 py-0.5 rounded-full">
-                            기록 {statusRecords.length}개
-                          </span>
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <Calendar size={16} className="text-emerald-500 flex-shrink-0" />
+                            <h3 className="font-extrabold text-slate-700 text-sm tracking-tight truncate">{date}</h3>
+                            <span className="text-[10px] bg-slate-50 border border-slate-100 text-slate-400 font-bold px-2 py-0.5 rounded-full flex-shrink-0">
+                              기록 {statusRecords.length}개
+                            </span>
+                          </div>
+                          
+                          <button
+                            onClick={() => setDailyNoteModal({ date, content: dailyNotes[date] || '' })}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors flex items-center justify-center cursor-pointer border border-transparent hover:border-emerald-100"
+                            title="하루 메모 작성/수정"
+                          >
+                            <Edit size={14} />
+                          </button>
                         </div>
+
+                        {/* Daily note text under day title if exists */}
+                        {dailyNotes[date] && (
+                          <div className="bg-emerald-50/20 border border-emerald-100/50 rounded-2xl p-3 text-slate-700 font-medium whitespace-pre-wrap text-[13px] leading-relaxed">
+                            {dailyNotes[date]}
+                          </div>
+                        )}
 
                         {/* Symptom Grid/Table */}
-                        <div className="overflow-x-visible">
-                          <table className="w-full text-left border-collapse table-fixed">
-                            <thead>
-                              <tr className="border-b border-slate-100">
-                                <th className="py-3 px-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider text-left w-[50px] sm:w-[80px]">시간</th>
-                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
-                                  <span className="block sm:hidden text-base cursor-help" title="증상 없음">🙌</span>
-                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">증상 없음</span>
-                                </th>
-                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
-                                  <span className="block sm:hidden text-base cursor-help" title="압력감">💆</span>
-                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">압력감</span>
-                                </th>
-                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
-                                  <span className="block sm:hidden text-base cursor-help" title="웅웅">🔊</span>
-                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">웅웅</span>
-                                </th>
-                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
-                                  <span className="block sm:hidden text-base cursor-help" title="삐-">⚡</span>
-                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">삐-</span>
-                                </th>
-                                <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
-                                  <span className="block sm:hidden text-base cursor-help" title="어지러움">🥴</span>
-                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">어지러움</span>
-                                </th>
-                                <th className="py-3 px-1 text-center w-[40px] sm:w-[65px]">
-                                  <span className="block sm:hidden text-base cursor-help" title="메모">📝</span>
-                                  <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">메모</span>
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {statusRecords.map((record) => {
-                                const activeSymptoms = getActiveSymptoms(record.hasSymptoms);
-                                const isNoSymptom = activeSymptoms.includes('증상 없음') || !hasActualSymptomVal(record.hasSymptoms);
-                                const hasPressure = activeSymptoms.includes('압력감');
-                                const hasBuzz = activeSymptoms.includes('웅웅');
-                                const hasBeep = activeSymptoms.includes('삐-') || activeSymptoms.includes('삐');
-                                const hasDizzy = activeSymptoms.includes('어지러움');
-                                const timeStr = formatDate(record.timestamp).time;
-
-                                return (
-                                  <tr key={record.id} className="border-b border-slate-50 hover:bg-slate-50/40 transition-colors">
-                                    <td className="py-3 px-1 text-xs font-bold text-slate-600 font-mono tracking-tighter sm:tracking-normal">{timeStr}</td>
-                                    
-                                    {/* 증상 없음 */}
-                                    <td className="py-3 px-0.5 text-center">
-                                      <div className="flex justify-center">
-                                        {isNoSymptom ? (
-                                          <span className="text-emerald-600 font-black text-xs sm:text-xs tracking-tight bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" title="증상 없음">OK</span>
-                                        ) : (
-                                          <span className="text-slate-200 text-xs">-</span>
-                                        )}
-                                      </div>
-                                    </td>
-
-                                    {/* 압력감 */}
-                                    <td className="py-3 px-0.5 text-center">
-                                      <div className="flex justify-center">
-                                        {hasPressure ? (
-                                          <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="압력감 있음" />
-                                        ) : (
-                                          <span className="text-slate-200 text-xs">-</span>
-                                        )}
-                                      </div>
-                                    </td>
-
-                                    {/* 웅웅 */}
-                                    <td className="py-3 px-0.5 text-center">
-                                      <div className="flex justify-center">
-                                        {hasBuzz ? (
-                                          <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="웅웅 울림 있음" />
-                                        ) : (
-                                          <span className="text-slate-200 text-xs">-</span>
-                                        )}
-                                      </div>
-                                    </td>
-
-                                    {/* 삐- */}
-                                    <td className="py-3 px-0.5 text-center">
-                                      <div className="flex justify-center">
-                                        {hasBeep ? (
-                                          <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="삐- 소리 있음" />
-                                        ) : (
-                                          <span className="text-slate-200 text-xs">-</span>
-                                        )}
-                                      </div>
-                                    </td>
-
-                                    {/* 어지러움 */}
-                                    <td className="py-3 px-0.5 text-center">
-                                      <div className="flex justify-center">
-                                        {hasDizzy ? (
-                                          <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="어지러움 있음" />
-                                        ) : (
-                                          <span className="text-slate-200 text-xs">-</span>
-                                        )}
-                                      </div>
-                                    </td>
-
-                                    {/* 메모 */}
-                                    <td className="py-3 px-1 text-center">
-                                      <div className="flex justify-center">
-                                        {record.memo && record.memo.trim() ? (
-                                          <button
-                                            onClick={() => setMemoModal({
-                                              title: `${date} ${timeStr} 메모`,
-                                              memo: record.memo,
-                                              timestamp: record.timestamp
-                                            })}
-                                            className="p-1 sm:p-1.5 rounded-lg bg-slate-50 border border-slate-100 hover:border-emerald-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/50 transition-all flex items-center justify-center shadow-sm"
-                                            title="메모 열기"
-                                          >
-                                            <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
-                                          </button>
-                                        ) : (
-                                          <span className="text-slate-200 text-xs">-</span>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
+                        {statusRecords.length > 0 ? (
+                          <div className="overflow-x-visible">
+                            <table className="w-full text-left border-collapse table-fixed">
+                              <thead>
+                                <tr className="border-b border-slate-100">
+                                  <th className="py-3 px-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider text-left w-[50px] sm:w-[80px]">시간</th>
+                                  <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                    <span className="block sm:hidden text-base cursor-help" title="증상 없음">🙌</span>
+                                    <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">증상 없음</span>
+                                  </th>
+                                  <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                    <span className="block sm:hidden text-base cursor-help" title="압력감">💆</span>
+                                    <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">압력감</span>
+                                  </th>
+                                  <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                    <span className="block sm:hidden text-base cursor-help" title="웅웅">🔊</span>
+                                    <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">웅웅</span>
+                                  </th>
+                                  <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                    <span className="block sm:hidden text-base cursor-help" title="삐-">⚡</span>
+                                    <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">삐-</span>
+                                  </th>
+                                  <th className="py-3 px-0.5 text-center w-[14%] sm:w-auto">
+                                    <span className="block sm:hidden text-base cursor-help" title="어지러움">🥴</span>
+                                    <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">어지러움</span>
+                                  </th>
+                                  <th className="py-3 px-1 text-center w-[40px] sm:w-[65px]">
+                                    <span className="block sm:hidden text-base cursor-help" title="메모">📝</span>
+                                    <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider">메모</span>
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {statusRecords.map((record) => {
+                                  const activeSymptoms = getActiveSymptoms(record.hasSymptoms);
+                                  const isNoSymptom = activeSymptoms.includes('증상 없음') || !hasActualSymptomVal(record.hasSymptoms);
+                                  const hasPressure = activeSymptoms.includes('압력감');
+                                  const hasBuzz = activeSymptoms.includes('웅웅');
+                                  const hasBeep = activeSymptoms.includes('삐-') || activeSymptoms.includes('삐');
+                                  const hasDizzy = activeSymptoms.includes('어지러움');
+                                  const timeStr = formatDate(record.timestamp).time;
+  
+                                  return (
+                                    <tr key={record.id} className="border-b border-slate-50 hover:bg-slate-50/40 transition-colors">
+                                      <td className="py-3 px-1 text-xs font-mono tracking-tighter sm:tracking-normal">
+                                        <button
+                                          onClick={() => handleEdit(record)}
+                                          className="text-slate-600 hover:text-emerald-600 hover:underline font-bold transition-all text-left focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded cursor-pointer"
+                                          title="기록 수정하기"
+                                        >
+                                          {timeStr}
+                                        </button>
+                                      </td>
+                                      
+                                      {/* 증상 없음 */}
+                                      <td className="py-3 px-0.5 text-center">
+                                        <div className="flex justify-center">
+                                          {isNoSymptom ? (
+                                            <span className="text-emerald-600 font-black text-xs sm:text-xs tracking-tight bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" title="증상 없음">OK</span>
+                                          ) : (
+                                            <span className="text-slate-200 text-xs">-</span>
+                                          )}
+                                        </div>
+                                      </td>
+  
+                                      {/* 압력감 */}
+                                      <td className="py-3 px-0.5 text-center">
+                                        <div className="flex justify-center">
+                                          {hasPressure ? (
+                                            <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="압력감 있음" />
+                                          ) : (
+                                            <span className="text-slate-200 text-xs">-</span>
+                                          )}
+                                        </div>
+                                      </td>
+  
+                                      {/* 웅웅 */}
+                                      <td className="py-3 px-0.5 text-center">
+                                        <div className="flex justify-center">
+                                          {hasBuzz ? (
+                                            <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="웅웅 울림 있음" />
+                                          ) : (
+                                            <span className="text-slate-200 text-xs">-</span>
+                                          )}
+                                        </div>
+                                      </td>
+  
+                                      {/* 삐- */}
+                                      <td className="py-3 px-0.5 text-center">
+                                        <div className="flex justify-center">
+                                          {hasBeep ? (
+                                            <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="삐- 소리 있음" />
+                                          ) : (
+                                            <span className="text-slate-200 text-xs">-</span>
+                                          )}
+                                        </div>
+                                      </td>
+  
+                                      {/* 어지러움 */}
+                                      <td className="py-3 px-0.5 text-center">
+                                        <div className="flex justify-center">
+                                          {hasDizzy ? (
+                                            <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-rose-500 shadow-sm border border-rose-300 ring-2 ring-rose-100" title="어지러움 있음" />
+                                          ) : (
+                                            <span className="text-slate-200 text-xs">-</span>
+                                          )}
+                                        </div>
+                                      </td>
+  
+                                      {/* 메모 */}
+                                      <td className="py-3 px-1 text-center">
+                                        <div className="flex justify-center">
+                                          {record.memo && record.memo.trim() ? (
+                                            <button
+                                              onClick={() => setMemoModal({
+                                                title: `${date} ${timeStr} 메모`,
+                                                memo: record.memo,
+                                                timestamp: record.timestamp
+                                              })}
+                                              className="p-1 sm:p-1.5 rounded-lg bg-slate-50 border border-slate-100 hover:border-emerald-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/50 transition-all flex items-center justify-center shadow-sm"
+                                              title="메모 열기"
+                                            >
+                                              <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
+                                            </button>
+                                          ) : (
+                                            <span className="text-slate-200 text-xs">-</span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="text-center text-xs text-slate-400 py-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-100 italic">
+                            기록된 증상이 없는 날입니다. (하루 메모만 작성됨)
+                          </div>
+                        )}
                       </div>
                     );
                   })
@@ -1863,6 +1947,134 @@ export default function App() {
                   className="py-2.5 px-6 rounded-xl bg-slate-800 text-xs font-bold text-white hover:bg-slate-900 transition-colors"
                 >
                   닫기
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Daily Note Modal */}
+      <AnimatePresence>
+        {dailyNoteModal && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDailyNoteModal(null)}
+              className="absolute inset-0 bg-slate-900"
+            />
+            
+            {/* Modal Body */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-100 z-10 flex flex-col gap-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
+                  <Edit className="text-emerald-500 w-5 h-5 flex-shrink-0" />
+                  하루 메모 작성
+                </h3>
+                <button
+                  onClick={() => setDailyNoteModal(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">날짜</span>
+                <span className="text-sm font-extrabold text-slate-700">{dailyNoteModal.date}</span>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="daily-note-text" className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                  내용
+                </label>
+                <textarea
+                  id="daily-note-text"
+                  value={dailyNoteModal.content}
+                  onChange={(e) => setDailyNoteModal(prev => prev ? { ...prev, content: e.target.value } : null)}
+                  placeholder="오늘 하루 있었던 증상이나 참고할 내용을 남겨보세요..."
+                  className="w-full text-sm text-slate-700 bg-slate-50/70 p-3.5 rounded-xl border border-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 h-32 resize-none leading-relaxed transition-all"
+                />
+              </div>
+
+              <div className="flex gap-3 mt-1">
+                <button
+                  onClick={() => setDailyNoteModal(null)}
+                  className="flex-1 py-3 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-500 hover:bg-slate-50 transition-colors"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={() => {
+                    const date = dailyNoteModal.date;
+                    const content = dailyNoteModal.content.trim();
+                    const recordId = `daily_note_${date}`;
+                    
+                    if (content === '') {
+                      // Delete
+                      setRecords(prev => prev.filter(rec => rec.id !== recordId));
+                      setDailyNotes(prev => {
+                        const next = { ...prev };
+                        delete next[date];
+                        return next;
+                      });
+                      
+                      if (GAS_URL) {
+                        fetch(GAS_URL, {
+                          method: 'POST',
+                          mode: 'no-cors',
+                          headers: { 'Content-Type': 'text/plain' },
+                          body: JSON.stringify({ action: 'delete', id: recordId })
+                        }).catch(err => console.error('Failed to delete daily note from server:', err));
+                      }
+                      showToast('하루 메모가 삭제되었습니다.', 'info');
+                    } else {
+                      // Save/update
+                      const dailyNoteRecord: MedicationRecord = {
+                        id: recordId,
+                        type: 'daily_note',
+                        isMedicated: false,
+                        hasSymptoms: '',
+                        memo: content,
+                        timestamp: new Date(date + 'T12:00:00').toISOString()
+                      };
+                      
+                      setRecords(prev => {
+                        const exists = prev.some(rec => rec.id === recordId);
+                        if (exists) {
+                          return prev.map(rec => rec.id === recordId ? dailyNoteRecord : rec);
+                        } else {
+                          return [...prev, dailyNoteRecord];
+                        }
+                      });
+                      setDailyNotes(prev => ({
+                        ...prev,
+                        [date]: content
+                      }));
+                      
+                      if (GAS_URL) {
+                        fetch(GAS_URL, {
+                          method: 'POST',
+                          mode: 'no-cors',
+                          headers: { 'Content-Type': 'text/plain' },
+                          body: JSON.stringify({ action: 'save', record: dailyNoteRecord })
+                        }).catch(err => console.error('Failed to save daily note to server:', err));
+                      }
+                      showToast('하루 메모가 저장되었습니다.', 'success');
+                    }
+                    setDailyNoteModal(null);
+                  }}
+                  className="flex-1 py-3 px-4 rounded-xl bg-slate-800 text-xs font-bold text-white hover:bg-slate-900 transition-colors"
+                >
+                  저장
                 </button>
               </div>
             </motion.div>
