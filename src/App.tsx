@@ -26,7 +26,8 @@ import {
   Camera,
   Image as ImageIcon,
   FileText,
-  Menu
+  Menu,
+  ExternalLink
 } from 'lucide-react';
 import { MedicationRecord } from './types.ts';
 
@@ -102,6 +103,72 @@ export default function App() {
       }
     }
     return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 11);
+  };
+
+  const openImageInNewTab = (src: string) => {
+    const newTab = window.open();
+    if (newTab) {
+      newTab.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>처방전 이미지 크게 보기</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+              body {
+                margin: 0;
+                background-color: #0f172a;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                font-family: system-ui, -apple-system, sans-serif;
+              }
+              .container {
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                max-width: 100%;
+              }
+              img {
+                max-width: 100%;
+                max-height: 90vh;
+                object-fit: contain;
+                border-radius: 12px;
+                box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+                border: 1px solid rgba(255,255,255,0.1);
+              }
+              .download-btn {
+                margin-top: 15px;
+                padding: 10px 20px;
+                background-color: #10b981;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-weight: bold;
+                cursor: pointer;
+                text-decoration: none;
+                font-size: 14px;
+                transition: background-color 0.2s;
+              }
+              .download-btn:hover {
+                background-color: #059669;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <img src="${src}" alt="Prescription" />
+              <a href="${src}" download="prescription_image.png" class="download-btn">이미지 저장하기</a>
+            </div>
+          </body>
+        </html>
+      `);
+      newTab.document.close();
+    }
   };
   // Helper: Get current time in Seoul (KST) for datetime-local input (YYYY-MM-DDTHH:mm)
   const getSeoulNow = (dateInput?: string) => {
@@ -264,6 +331,9 @@ export default function App() {
   // Memo Modal State
   const [memoModal, setMemoModal] = useState<{ title: string; memo: string; timestamp: string } | null>(null);
 
+  // Image Lightbox State
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
   // Daily Note State (loaded from localStorage & saved on changes)
   const [dailyNotes, setDailyNotes] = useState<Record<string, string>>(() => {
     try {
@@ -420,15 +490,35 @@ export default function App() {
       return;
     }
 
-    let finalTimestamp = new Date().toISOString();
-    try {
-      const parsedDate = new Date(customTimestamp + ':00+09:00');
-      if (!isNaN(parsedDate.getTime())) {
-        finalTimestamp = parsedDate.toISOString();
+    let finalTimestamp = '';
+    const convertKSTToISO = (kstString: string): string => {
+      try {
+        const parsedDate = new Date(kstString + ':00+09:00');
+        if (!isNaN(parsedDate.getTime())) {
+          return parsedDate.toISOString();
+        }
+      } catch (err) {
+        console.error('Failed to parse custom timestamp:', err);
       }
-    } catch (err) {
-      console.error('Failed to parse custom timestamp in handleSave:', err);
+      return new Date().toISOString();
+    };
+
+    if (editingId) {
+      const originalRecord = records.find(rec => rec.id === editingId);
+      if (originalRecord) {
+        const originalSeoulFormatted = getSeoulNow(originalRecord.timestamp);
+        if (customTimestamp === originalSeoulFormatted) {
+          finalTimestamp = originalRecord.timestamp;
+        } else {
+          finalTimestamp = convertKSTToISO(customTimestamp);
+        }
+      } else {
+        finalTimestamp = convertKSTToISO(customTimestamp);
+      }
+    } else {
+      finalTimestamp = convertKSTToISO(customTimestamp);
     }
+
     const id = editingId || generateId();
     
     const newRecord: MedicationRecord = {
@@ -1116,7 +1206,7 @@ export default function App() {
                                   </div>
                                   {record.imageUrl && (
                                     <div className="rounded-xl overflow-hidden border border-slate-100 aspect-video bg-white">
-                                      <img src={record.imageUrl} alt="Prescription" className="w-full h-full object-contain cursor-pointer" onClick={() => window.open(record.imageUrl, '_blank')} />
+                                      <img src={record.imageUrl} alt="Prescription" className="w-full h-full object-contain cursor-pointer" onClick={() => setLightboxImage(record.imageUrl)} title="이미지 크게 보기" />
                                     </div>
                                   )}
                                 </div>
@@ -1523,7 +1613,8 @@ export default function App() {
                                       {record.imageUrl && (
                                         <div 
                                           className="w-12 h-12 rounded-lg border border-slate-100 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                                          onClick={() => window.open(record.imageUrl, '_blank')}
+                                          onClick={() => setLightboxImage(record.imageUrl)}
+                                          title="이미지 크게 보기"
                                         >
                                           <img src={record.imageUrl} alt="Prescription" className="w-full h-full object-cover" />
                                         </div>
@@ -2077,6 +2168,77 @@ export default function App() {
                   저장
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Prescription Image Lightbox Modal */}
+      <AnimatePresence>
+        {lightboxImage && (
+          <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.95 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setLightboxImage(null)}
+              className="absolute inset-0 bg-slate-950/95 cursor-zoom-out"
+            />
+
+            {/* Modal Body / Header & Image Wrapper */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative max-w-4xl w-full flex flex-col gap-4 z-10 max-h-[90vh]"
+            >
+              {/* Header Panel inside overlay to give quick actions */}
+              <div className="flex items-center justify-between bg-slate-900/80 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-slate-800 text-white shadow-xl flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold text-[10px] sm:text-xs bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">처방전</span>
+                  <span className="text-xs font-semibold text-slate-300">이미지 크게 보기</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openImageInNewTab(lightboxImage)}
+                    className="flex items-center gap-1.5 p-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 hover:text-white transition-all cursor-pointer"
+                    title="새 창에서 원본 보기"
+                  >
+                    <ExternalLink size={14} />
+                    <span>새 창으로 보기</span>
+                  </button>
+                  <a
+                    href={lightboxImage}
+                    download="prescription_image.png"
+                    className="flex items-center gap-1.5 p-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white transition-all cursor-pointer"
+                    title="기기에 이미지 저장"
+                  >
+                    <Download size={14} />
+                    <span className="hidden sm:inline">다운로드</span>
+                  </a>
+                  <button
+                    onClick={() => setLightboxImage(null)}
+                    className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 hover:text-rose-400 transition-all text-slate-300 cursor-pointer"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Main Image Viewport */}
+              <div className="flex-1 min-h-0 bg-slate-900/40 border border-slate-800/80 rounded-3xl overflow-hidden p-2 flex items-center justify-center shadow-inner relative group">
+                <img
+                  src={lightboxImage}
+                  alt="Prescription Full-size"
+                  className="max-h-[65vh] xs:max-h-[70vh] object-contain rounded-2xl shadow-2xl transition-transform duration-300 pointer-events-auto"
+                />
+              </div>
+              
+              {/* Tap backdrop to close label */}
+              <p className="text-center text-[11px] text-slate-500 italic pointer-events-none">
+                바깥 영역을 클릭하면 닫힙니다.
+              </p>
             </motion.div>
           </div>
         )}
