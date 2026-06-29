@@ -1067,9 +1067,12 @@ export default function App() {
                         
                         // Check if day has data for current mode matching KST date
                         const dayRecords = records.filter(r => getKSTDateStr(r.timestamp) === dateStr && r.type !== 'daily_note');
-                        const hasMedication = dayRecords.some(r => r.isMedicated && r.type !== 'prescription');
-                        const hasSymptoms = dayRecords.some(r => hasActualSymptomVal(r.hasSymptoms) && r.type !== 'prescription');
-                        const hasPrescription = dayRecords.some(r => r.type === 'prescription');
+                        const hasSymptomsPresent = dayRecords.some(r => r.type !== 'prescription' && hasActualSymptomVal(r.hasSymptoms));
+                        const hasNoSymptoms = dayRecords.some(r => r.type !== 'prescription' && !hasActualSymptomVal(r.hasSymptoms));
+                        
+                        const showRedDot = hasSymptomsPresent;
+                        const showGreenDot = hasNoSymptoms && !hasSymptomsPresent;
+                        const showBlueDot = dayRecords.some(r => r.isMedicated || r.type === 'prescription');
                         const hasAnyRecord = dayRecords.length > 0;
 
                         cells.push(
@@ -1092,13 +1095,13 @@ export default function App() {
                               {d}
                             </span>
                             <div className="mt-1 flex gap-0.5 justify-center flex-wrap max-w-full px-1">
-                              {hasMedication && (
+                              {showGreenDot && (
                                 <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-400' : 'bg-emerald-500'}`} />
                               )}
-                              {hasSymptoms && (
+                              {showRedDot && (
                                 <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-rose-300' : 'bg-rose-500'}`} />
                               )}
-                              {hasPrescription && (
+                              {showBlueDot && (
                                 <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-blue-300' : 'bg-blue-500'}`} />
                               )}
                             </div>
